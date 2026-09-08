@@ -217,6 +217,23 @@ export function produceClashConfigOutput(list, type, opts = {}) {
     const externalGroups = Array.isArray(externalConfig['proxy-groups'])
         ? externalConfig['proxy-groups']
         : [];
+    const proxyNames = list.map((proxy) => proxy.name);
+    const resolveAllProxies = (value) => {
+        if (value === '__ALL_PROXIES__') return proxyNames;
+        if (Array.isArray(value)) return value.flatMap(resolveAllProxies);
+        if (value && typeof value === 'object') {
+            return Object.fromEntries(
+                Object.entries(value).map(([key, item]) => [
+                    key,
+                    resolveAllProxies(item),
+                ]),
+            );
+        }
+        return value;
+    };
+    const resolvedExternalGroups = externalGroups.map((group) => ({
+        ...resolveAllProxies(group),
+    }));
 
     if (
         externalGroups.length === 0 &&
@@ -230,8 +247,8 @@ export function produceClashConfigOutput(list, type, opts = {}) {
         YAML.safeDump(
             {
                 proxies: list,
-                ...(externalGroups.length > 0
-                    ? { 'proxy-groups': externalGroups }
+                ...(resolvedExternalGroups.length > 0
+                    ? { 'proxy-groups': resolvedExternalGroups }
                     : {}),
                 ...(Object.keys(externalRuleProviders).length > 0
                     ? { 'rule-providers': externalRuleProviders }
