@@ -22,12 +22,14 @@ export default {
         if (method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
 
         if (
-            !(method === "POST" && pathname === `/${secret}/api/proxy/parse`) &&
+            !(method === "POST" && (pathname === `/${secret}/api/proxy/parse` || pathname === "/api/proxy/parse")) &&
             !(method === "GET" && (
                 pathname === `/${secret}` ||
                 pathname === `/${secret}/` ||
                 pathname === `/${secret}/sub` ||
+                pathname === "/sub" ||
                 pathname === `/${secret}/version`
+                || pathname === "/version"
             ))
         ) {
             return withCors(new Response(null, { status: 403 }));
@@ -36,7 +38,8 @@ export default {
         if (method === "GET" && (
             pathname === `/${secret}` ||
             pathname === `/${secret}/` ||
-            pathname === `/${secret}/version`
+            pathname === `/${secret}/version` ||
+            pathname === "/version"
         )) {
             return withCors(new Response("subconverter v0.9.0 backend\n", {
                 status: 200,
