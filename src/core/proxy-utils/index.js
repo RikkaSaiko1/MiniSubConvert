@@ -1,4 +1,3 @@
-import { Buffer } from 'buffer';
 import rs from '@/utils/rs';
 import {
     isIPv4,
@@ -439,9 +438,9 @@ function lastParse(proxy) {
         } else {
             try {
                 if (proxy.name?.data) {
-                    proxy.name = Buffer.from(proxy.name.data).toString('utf8');
+                    proxy.name = new TextDecoder().decode(proxy.name.data);
                 } else {
-                    proxy.name = Buffer.from(proxy.name).toString('utf8');
+                    proxy.name = new TextDecoder().decode(proxy.name);
                 }
             } catch (e) {
                 $.error(`proxy.name decode failed\nReason: ${e}`);
