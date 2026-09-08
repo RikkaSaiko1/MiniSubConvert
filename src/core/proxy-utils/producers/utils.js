@@ -217,97 +217,6 @@ export function produceClashConfigOutput(list, type, opts = {}) {
     const externalGroups = Array.isArray(externalConfig['proxy-groups'])
         ? externalConfig['proxy-groups']
         : [];
-    const countryAliases = [
-        ['香港', '🇭🇰', ['hong kong', 'hk', 'hkg']],
-        ['台湾', '🇹🇼', ['taiwan', 'tw', 'twn']],
-        ['日本', '🇯🇵', ['japan', 'jp', 'jpn']],
-        ['韩国', '🇰🇷', ['korea', 'south korea', 'kr', 'kor']],
-        ['新加坡', '🇸🇬', ['singapore', 'sg', 'sgp']],
-        ['美国', '🇺🇸', ['united states', 'america', 'usa', 'us', 'en']],
-        ['英国', '🇬🇧', ['united kingdom', 'great britain', 'england', 'uk', 'gb', 'gbr']],
-        ['德国', '🇩🇪', ['germany', 'de', 'deu']],
-        ['法国', '🇫🇷', ['france', 'fr', 'fra']],
-        ['加拿大', '🇨🇦', ['canada', 'ca', 'can']],
-        ['澳大利亚', '🇦🇺', ['australia', 'au', 'aus']],
-        ['印度', '🇮🇳', ['india', 'in', 'ind']],
-        ['俄罗斯', '🇷🇺', ['russia', 'ru', 'rus']],
-        ['荷兰', '🇳🇱', ['netherlands', 'holland', 'nl', 'nld']],
-        ['土耳其', '🇹🇷', ['turkey', 'tr', 'tur']],
-    ];
-    const proxyNames = list.map((proxy) => proxy.name);
-    const searchableText = (proxy) =>
-        [proxy.name, proxy.server, proxy.subName, proxy.collectionName]
-            .filter(Boolean)
-            .join(' ');
-    const aliasesForGroup = (groupName) => {
-        const normalizedName = String(groupName || '').toLowerCase();
-        return countryAliases
-            .filter(([name, flag]) =>
-                normalizedName.includes(name) || normalizedName.includes(flag),
-            )
-            .flatMap(([, flag, aliases]) => [flag, ...aliases]);
-    };
-    const matchesFilter = (proxy, filter, aliases = []) => {
-        const text = searchableText(proxy);
-        const aliasMatched = aliases.some((alias) =>
-            text.toLowerCase().includes(alias.toLowerCase()),
-        );
-        if (aliasMatched) {
-            return true;
-        }
-        if (!filter) return aliases.length === 0;
-        try {
-            const normalizedFilter = filter.replace(/^\(\?i\)/, '');
-            return new RegExp(
-                normalizedFilter,
-                filter.startsWith('(?i)') ? 'i' : '',
-            ).test(text);
-        } catch {
-            return false;
-        }
-    };
-    const resolveAllProxies = (value) => {
-        if (value === '__ALL_PROXIES__') return proxyNames;
-        if (Array.isArray(value)) return value.flatMap(resolveAllProxies);
-        if (value && typeof value === 'object') {
-            return Object.fromEntries(
-                Object.entries(value).map(([key, item]) => [
-                    key,
-                    resolveAllProxies(item),
-                ]),
-            );
-        }
-        return value;
-    };
-    const resolvedExternalGroups = externalGroups.map((group) => {
-        const resolvedGroup = resolveAllProxies(group);
-        const groupAliases = aliasesForGroup(resolvedGroup.name);
-        const hasProxySource =
-            Array.isArray(resolvedGroup.proxies) ||
-            Array.isArray(resolvedGroup.use);
-        if (!resolvedGroup['include-all'] && hasProxySource) {
-            return resolvedGroup;
-        }
-
-        const dynamicProxies = proxyNames.filter(
-            (_, index) =>
-            matchesFilter(list[index], resolvedGroup.filter, groupAliases) &&
-                (!resolvedGroup['exclude-filter'] ||
-                    !matchesFilter(list[index], resolvedGroup['exclude-filter'])),
-        );
-        const proxies = [
-            ...(Array.isArray(resolvedGroup.proxies)
-                ? resolvedGroup.proxies
-                : []),
-            ...dynamicProxies,
-        ];
-        return {
-            ...resolvedGroup,
-            proxies: [...new Set(proxies)].length > 0
-                ? [...new Set(proxies)]
-                : ['DIRECT'],
-        };
-    });
 
     if (
         externalGroups.length === 0 &&
@@ -321,8 +230,8 @@ export function produceClashConfigOutput(list, type, opts = {}) {
         YAML.safeDump(
             {
                 proxies: list,
-                ...(resolvedExternalGroups.length > 0
-                    ? { 'proxy-groups': resolvedExternalGroups }
+                ...(externalGroups.length > 0
+                    ? { 'proxy-groups': externalGroups }
                     : {}),
                 ...(Object.keys(externalRuleProviders).length > 0
                     ? { 'rule-providers': externalRuleProviders }
