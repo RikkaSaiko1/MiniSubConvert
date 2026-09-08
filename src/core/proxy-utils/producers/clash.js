@@ -1,6 +1,7 @@
 import {
     isPresent,
-    produceProxyListOutput,
+    ensureUniqueProxyNames,
+    produceClashConfigOutput,
 } from '@/core/proxy-utils/producers/utils';
 import { normalizeClashVmessSecurity } from '../vmess-security';
 import {
@@ -218,7 +219,7 @@ export default function Clash_Producer() {
                 }
                 return proxy;
             });
-        return produceProxyListOutput(list, type, opts);
+        return produceClashConfigOutput(ensureUniqueProxyNames(list), type, opts);
     };
     return { type, produce };
 }

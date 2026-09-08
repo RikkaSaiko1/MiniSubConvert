@@ -5,9 +5,9 @@
 	"scripts": {
 		"sync": "node scripts/sync.js",
 		"build": "node scripts/build.js",
-		"deploy": "pnpm run build && wrangler deploy .build/src/worker.js --config wrangler.jsonc --tsconfig .build/jsconfig.json",
+		"deploy": "pnpm run build && wrangler deploy --config wrangler.jsonc",
 		"node:dev": "nodemon -w src -w scripts -w package.json -w jsconfig.json --ext js,json --exec \"pnpm run build && node dist/minisubconvert.js\"",
-		"worker:dev": "pnpm run build && wrangler dev .build/src/worker.js --config wrangler.jsonc --tsconfig .build/jsconfig.json --ip 0.0.0.0",
+		"worker:dev": "pnpm run build && wrangler dev --config wrangler.jsonc --ip 0.0.0.0",
 		"lint": "eslint \"{src,scripts}/**/*.js\" --ignore-pattern \"src/core/proxy-utils/**\""
 	},
 	"author": "bestrui",

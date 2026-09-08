@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { ProxyUtils } from "@/core/proxy-utils";
+import { parseExternalConfig } from "@/core/proxy-utils/producers/utils";
 
 createServer(async (req, res) => {
     const method = (req.method || "").toUpperCase();
@@ -41,12 +42,25 @@ createServer(async (req, res) => {
 
         const target = url.searchParams.get("target");
         const rawUrls = url.searchParams.get("url");
+        const configUrl = url.searchParams.get("config");
 
         if (!target || !rawUrls) {
             res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
             res.end("missing target or url");
             log("400");
             return;
+        }
+
+        let externalConfig = {};
+        if (configUrl) {
+            const configResponse = await fetch(configUrl);
+            if (!configResponse.ok) {
+                res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
+                res.end("failed to fetch external config");
+                log("502");
+                return;
+            }
+            externalConfig = parseExternalConfig(await configResponse.text());
         }
 
         const proxies = (
@@ -58,7 +72,7 @@ createServer(async (req, res) => {
                     .map((subscribeUrl) => fetch(subscribeUrl).then((response) => response.text())),
             )
         ).flatMap((subContent) => ProxyUtils.parse(subContent));
-        const result = ProxyUtils.produce(proxies, target);
+        const result = ProxyUtils.produce(proxies, target, undefined, { externalConfig });
 
         res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
         res.end(result);

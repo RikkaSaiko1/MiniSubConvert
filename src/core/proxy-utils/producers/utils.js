@@ -205,3 +205,144 @@ export function produceProxyListOutput(list, type, opts = {}) {
         list.map((proxy) => '  - ' + JSON.stringify(proxy) + '\n').join('')
     );
 }
+
+export function produceClashConfigOutput(list, type, opts = {}) {
+    if (type === 'internal') return list;
+
+    const proxyNames = list.map((proxy) => proxy.name);
+    const externalConfig = opts.externalConfig || {};
+    const externalRuleProviders = externalConfig['rule-providers'] || {};
+    const externalRules = Array.isArray(externalConfig.rules)
+        ? externalConfig.rules
+        : [];
+    const externalGroups = Array.isArray(externalConfig['proxy-groups'])
+        ? externalConfig['proxy-groups']
+        : [];
+    const resolvedExternalGroups = externalGroups.map((group) => ({
+        ...group,
+        proxies: group.proxies?.flatMap((name) =>
+            name === '__ALL_PROXIES__' ? proxyNames : [name],
+        ),
+    }));
+    const hasProxyGroup = resolvedExternalGroups.some(
+        (group) => group.name === 'PROXY',
+    );
+    return normalizeClashYaml(
+        YAML.safeDump(
+            {
+                proxies: list,
+                'proxy-groups': [
+                    ...resolvedExternalGroups,
+                    ...(hasProxyGroup
+                        ? []
+                        : [
+                              {
+                                  name: 'PROXY',
+                                  type: 'select',
+                                  proxies: [...proxyNames, 'DIRECT'],
+                              },
+                          ]),
+                ],
+                ...(Object.keys(externalRuleProviders).length > 0
+                    ? { 'rule-providers': externalRuleProviders }
+                    : {}),
+                rules: [...externalRules, 'MATCH,PROXY'],
+            },
+            { lineWidth: -1 },
+        ),
+    );
+}
+
+export function parseExternalConfig(content) {
+    const text = String(content || '');
+    if (!/^\s*\[custom\]/im.test(text)) {
+        return YAML.safeLoad(text) || {};
+    }
+
+    const ruleProviders = {};
+    const rules = [];
+    const groups = [];
+    const providerNames = new Set();
+
+    for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith(';')) continue;
+
+        if (line.startsWith('ruleset=')) {
+            const value = line.slice('ruleset='.length);
+            const separator = value.indexOf(',');
+            if (separator < 0) continue;
+            const group = value.slice(0, separator).trim();
+            const source = value.slice(separator + 1).trim();
+            if (source.startsWith('[]')) {
+                const builtin = source.slice(2).split(',');
+                rules.push(`${builtin[0] === 'FINAL' ? 'MATCH' : builtin[0]},${builtin.slice(1).join(',')}${builtin.length > 1 ? ',' : ''}${group}`);
+                continue;
+            }
+            const sourcePath = source.split(/[?#]/, 1)[0];
+            const sourceName = sourcePath.split('/').pop()?.replace(/\.[^.]+$/, '') || 'rule';
+            const baseName = sourceName.replace(/[^\w.-]+/g, '_') || 'rule';
+            let name = baseName;
+            let suffix = 2;
+            while (providerNames.has(name)) name = `${baseName}_${suffix++}`;
+            providerNames.add(name);
+            ruleProviders[name] = {
+                type: 'http',
+                behavior: 'classical',
+                format: 'text',
+                url: source,
+                path: `./ruleset/${name}.list`,
+                interval: 86400,
+            };
+            rules.push(`RULE-SET,${name},${group}`);
+        } else if (line.startsWith('custom_proxy_group=')) {
+            const parts = line.slice('custom_proxy_group='.length).split('`');
+            const name = parts.shift()?.trim();
+            const groupType = parts.shift()?.trim();
+            if (!name || !groupType) continue;
+            const group = { name, type: groupType === 'url-test' ? 'url-test' : groupType, proxies: [] };
+            for (const part of parts) {
+                if (!part || /^https?:\/\//.test(part) || /^\d/.test(part)) continue;
+                if (part === '.*') {
+                    group.proxies.push('__ALL_PROXIES__');
+                } else if (part.startsWith('[]')) {
+                    group.proxies.push(part.slice(2));
+                }
+            }
+            if (groupType === 'url-test') {
+                const url = parts.find((part) => /^https?:\/\//.test(part));
+                const interval = parts.find((part) => /^\d+$/.test(part));
+                if (url) group.url = url;
+                if (interval) group.interval = Number(interval);
+            }
+            groups.push(group);
+        }
+    }
+
+    return { 'rule-providers': ruleProviders, rules, 'proxy-groups': groups };
+}
+
+export function ensureUniqueProxyNames(list) {
+    const nameCounts = new Map();
+    const usedNames = new Set();
+
+    return list.map((proxy) => {
+        const name = proxy.name;
+        let count = nameCounts.get(name) || 0;
+        let uniqueName = name;
+
+        do {
+            count += 1;
+            uniqueName = count === 1 ? name : `${name} ${count}`;
+        } while (usedNames.has(uniqueName));
+
+        nameCounts.set(name, count);
+        usedNames.add(uniqueName);
+
+        if (uniqueName !== name) {
+            proxy.name = uniqueName;
+        }
+
+        return proxy;
+    });
+}

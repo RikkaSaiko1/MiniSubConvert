@@ -42,6 +42,10 @@
 ```
 GET <WORKER_DOMAIN>/<SECRET>/sub?target=<TARGET>&url=<URLS>
 
+可选外部完整配置（例如 ACL4SSR）:
+
+GET <WORKER_DOMAIN>/<SECRET>/sub?target=<TARGET>&url=<URLS>&config=<CONFIG_URL>
+
 GET <WORKER_DOMAIN>/<SECRET>/version
 ```
 

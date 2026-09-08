@@ -1,4 +1,5 @@
 import { ProxyUtils } from "@/core/proxy-utils";
+import { parseExternalConfig } from "@/core/proxy-utils/producers/utils";
 
 export default {
     async fetch(request, env) {
@@ -54,12 +55,21 @@ export class MiniSubConvert {
                 const searchParams = new URL(request.url).searchParams;
                 const target = searchParams.get("target");
                 const rawUrls = searchParams.get("url");
+                const configUrl = searchParams.get("config");
 
                 if (!target || !rawUrls) {
                     return new Response("missing target or url", { status: 400 });
                 }
 
                 const client = target;
+                let externalConfig = {};
+                if (configUrl) {
+                    const configResponse = await fetch(configUrl);
+                    if (!configResponse.ok) {
+                        return new Response("failed to fetch external config", { status: 502 });
+                    }
+                    externalConfig = parseExternalConfig(await configResponse.text());
+                }
                 const proxies = (
                     await Promise.all(
                         rawUrls
@@ -69,7 +79,7 @@ export class MiniSubConvert {
                             .map((subscribeUrl) => fetch(subscribeUrl).then((response) => response.text())),
                     )
                 ).flatMap((subContent) => ProxyUtils.parse(subContent));
-                const result = ProxyUtils.produce(proxies, client);
+                const result = ProxyUtils.produce(proxies, client, undefined, { externalConfig });
                 console.log(`parsed ${proxies.length} nodes, target client: ${client || "-"}`);
 
                 return new Response(result, {

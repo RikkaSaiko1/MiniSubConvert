@@ -2,7 +2,8 @@ import {
     getWireGuardAddressWithCIDR,
     isPresent,
     normalizePluginMuxBooleanValue,
-    produceProxyListOutput,
+    ensureUniqueProxyNames,
+    produceClashConfigOutput,
     restoreShadowTLSProxyOpts,
     supportsShadowsocksV2rayPluginMode,
 } from '@/core/proxy-utils/producers/utils';
@@ -441,7 +442,7 @@ export default function ClashMeta_Producer() {
                 return proxy;
             });
 
-        return produceProxyListOutput(list, type, opts);
+        return produceClashConfigOutput(ensureUniqueProxyNames(list), type, opts);
     };
     return { type, produce };
 }

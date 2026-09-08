@@ -5,8 +5,12 @@ export function safeLoad(content) {
     return YAML.parse(String(content));
 }
 
+export function safeDump(content, options = {}) {
+    return YAML.stringify(content, options);
+}
 
 export default {
     safeLoad,
+    safeDump,
     parse: safeLoad,
 };
