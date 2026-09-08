@@ -32098,57 +32098,20 @@ function produceProxyListOutput(list, type, opts = {}) {
 __name(produceProxyListOutput, "produceProxyListOutput");
 function produceClashConfigOutput(list, type, opts = {}) {
   if (type === "internal") return list;
-  const proxyNames = list.map((proxy) => proxy.name);
   const externalConfig = opts.externalConfig || {};
   const externalRuleProviders = externalConfig["rule-providers"] || {};
   const externalRules = Array.isArray(externalConfig.rules) ? externalConfig.rules : [];
   const externalGroups = Array.isArray(externalConfig["proxy-groups"]) ? externalConfig["proxy-groups"] : [];
-  const matchesFilter = /* @__PURE__ */ __name((name, filter) => {
-    if (!filter) return true;
-    try {
-      const normalizedFilter = filter.replace(/^\(\?i\)/, "");
-      return new RegExp(
-        normalizedFilter,
-        filter.startsWith("(?i)") ? "i" : ""
-      ).test(name);
-    } catch {
-      return false;
-    }
-  }, "matchesFilter");
-  const resolvedExternalGroups = externalGroups.map((group) => {
-    const configuredProxies = group.proxies?.flatMap(
-      (name) => name === "__ALL_PROXIES__" ? proxyNames : [name]
-    ) || [];
-    const dynamicProxies = group["include-all"] ? proxyNames.filter(
-      (name) => matchesFilter(name, group.filter) && (!group["exclude-filter"] || !matchesFilter(name, group["exclude-filter"]))
-    ) : [];
-    const proxies = [
-      .../* @__PURE__ */ new Set([...configuredProxies, ...dynamicProxies])
-    ];
-    return {
-      ...group,
-      proxies: proxies.length > 0 ? proxies : ["DIRECT"]
-    };
-  });
-  const hasProxyGroup = resolvedExternalGroups.some(
-    (group) => group.name === "PROXY"
-  );
+  if (externalGroups.length === 0 && Object.keys(externalRuleProviders).length === 0 && externalRules.length === 0) {
+    return produceProxyListOutput(list, type, opts);
+  }
   return normalizeClashYaml(
     yaml_default.safeDump(
       {
         proxies: list,
-        "proxy-groups": [
-          ...resolvedExternalGroups,
-          ...hasProxyGroup ? [] : [
-            {
-              name: "PROXY",
-              type: "select",
-              proxies: [...proxyNames, "DIRECT"]
-            }
-          ]
-        ],
+        ...externalGroups.length > 0 ? { "proxy-groups": externalGroups } : {},
         ...Object.keys(externalRuleProviders).length > 0 ? { "rule-providers": externalRuleProviders } : {},
-        rules: [...externalRules, "MATCH,PROXY"]
+        ...externalRules.length > 0 ? { rules: externalRules } : {}
       },
       { lineWidth: -1 }
     )
