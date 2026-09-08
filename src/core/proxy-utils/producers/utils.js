@@ -218,12 +218,39 @@ export function produceClashConfigOutput(list, type, opts = {}) {
     const externalGroups = Array.isArray(externalConfig['proxy-groups'])
         ? externalConfig['proxy-groups']
         : [];
-    const resolvedExternalGroups = externalGroups.map((group) => ({
-        ...group,
-        proxies: group.proxies?.flatMap((name) =>
-            name === '__ALL_PROXIES__' ? proxyNames : [name],
-        ),
-    }));
+    const matchesFilter = (name, filter) => {
+        if (!filter) return true;
+        try {
+            const normalizedFilter = filter.replace(/^\(\?i\)/, '');
+            return new RegExp(
+                normalizedFilter,
+                filter.startsWith('(?i)') ? 'i' : '',
+            ).test(name);
+        } catch {
+            return false;
+        }
+    };
+    const resolvedExternalGroups = externalGroups.map((group) => {
+        const configuredProxies =
+            group.proxies?.flatMap((name) =>
+                name === '__ALL_PROXIES__' ? proxyNames : [name],
+            ) || [];
+        const dynamicProxies = group['include-all']
+            ? proxyNames.filter(
+                  (name) =>
+                      matchesFilter(name, group.filter) &&
+                      (!group['exclude-filter'] ||
+                          !matchesFilter(name, group['exclude-filter'])),
+              )
+            : [];
+        const proxies = [
+            ...new Set([...configuredProxies, ...dynamicProxies]),
+        ];
+        return {
+            ...group,
+            proxies: proxies.length > 0 ? proxies : ['DIRECT'],
+        };
+    });
     const hasProxyGroup = resolvedExternalGroups.some(
         (group) => group.name === 'PROXY',
     );

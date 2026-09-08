@@ -1,6 +1,5 @@
 import Surge_Producer from './surge';
 import SurgeMac_Producer from './surgemac';
-import Clash_Producer from './clash';
 import ClashMeta_Producer from './clashmeta';
 import Stash_Producer from './stash';
 import Loon_Producer from './loon';
@@ -27,8 +26,8 @@ export default {
     Surge: Surge_Producer(),
     SurgeMac: SurgeMac_Producer(),
     Loon: Loon_Producer(),
-    Clash: Clash_Producer(),
-    clash: Clash_Producer(),
+    Clash: ClashMeta_Producer(),
+    clash: ClashMeta_Producer(),
     meta: ClashMeta_Producer(),
     clashmeta: ClashMeta_Producer(),
     'clash.meta': ClashMeta_Producer(),
