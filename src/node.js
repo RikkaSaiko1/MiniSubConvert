@@ -2,6 +2,12 @@ import { createServer } from "node:http";
 import { ProxyUtils } from "@/core/proxy-utils";
 import { parseExternalConfig } from "@/core/proxy-utils/producers/utils";
 
+const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+};
+
 createServer(async (req, res) => {
     const method = (req.method || "").toUpperCase();
     const route = req.url || "";
@@ -10,11 +16,19 @@ createServer(async (req, res) => {
     const ip = (req.headers["x-forwarded-for"] || "").toString().split(",")[0].trim() || req.socket.remoteAddress || "-";
     const secret = process.env.SECRET || "secret";
     const log = (response, extra = "") => console.log(`[${new Date().toISOString()}] ${method} ${ip} ${response} ${route} ${extra ? ` ${extra}` : ""}`);
+    if (method === "OPTIONS") {
+        res.writeHead(204, corsHeaders);
+        res.end();
+        return;
+    }
+
+    const writeHead = (status, headers = {}) => res.writeHead(status, { ...corsHeaders, ...headers });
+
     if (
         !(method === "POST" && pathname === `/${secret}/api/proxy/parse`) &&
         !(method === "GET" && (pathname === `/${secret}/sub` || pathname === `/${secret}/version`))
     ) {
-        res.writeHead(403);
+        writeHead(403);
         res.end();
         log("403");
         return;
@@ -22,7 +36,7 @@ createServer(async (req, res) => {
 
     try {
         if (method === "GET" && pathname === `/${secret}/version`) {
-            res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+            writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
             res.end("subconverter v0.9.0 backend\n");
             log("200");
             return;
@@ -34,7 +48,7 @@ createServer(async (req, res) => {
             const { data, client } = JSON.parse(raw || "{}");
             const proxies = ProxyUtils.parse(data);
             const par_res = ProxyUtils.produce(proxies, client);
-            res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+            writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
             res.end(JSON.stringify({ status: "success", data: { par_res } }));
             log("200", `parsed ${proxies.length} nodes, target client: ${client || "-"}`);
             return;
@@ -45,7 +59,7 @@ createServer(async (req, res) => {
         const configUrl = url.searchParams.get("config");
 
         if (!target || !rawUrls) {
-            res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+            writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
             res.end("missing target or url");
             log("400");
             return;
@@ -55,7 +69,7 @@ createServer(async (req, res) => {
         if (configUrl) {
             const configResponse = await fetch(configUrl);
             if (!configResponse.ok) {
-                res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
+                writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
                 res.end("failed to fetch external config");
                 log("502");
                 return;
@@ -74,11 +88,11 @@ createServer(async (req, res) => {
         ).flatMap((subContent) => ProxyUtils.parse(subContent));
         const result = ProxyUtils.produce(proxies, target, undefined, { externalConfig });
 
-        res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+        writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
         res.end(result);
         log("200", `parsed ${proxies.length} nodes, target client: ${target || "-"}`);
     } catch {
-        res.writeHead(500);
+        writeHead(500);
         res.end();
         log("500");
     }
