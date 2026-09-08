@@ -11,7 +11,7 @@ createServer(async (req, res) => {
     const log = (response, extra = "") => console.log(`[${new Date().toISOString()}] ${method} ${ip} ${response} ${route} ${extra ? ` ${extra}` : ""}`);
     if (
         !(method === "POST" && pathname === `/${secret}/api/proxy/parse`) &&
-        !(method === "GET" && pathname === `/${secret}/sub`)
+        !(method === "GET" && (pathname === `/${secret}/sub` || pathname === `/${secret}/version`))
     ) {
         res.writeHead(403);
         res.end();
@@ -20,6 +20,13 @@ createServer(async (req, res) => {
     }
 
     try {
+        if (method === "GET" && pathname === `/${secret}/version`) {
+            res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+            res.end("subconverter v0.9.0 backend\n");
+            log("200");
+            return;
+        }
+
         if (method === "POST") {
             let raw = "";
             for await (const chunk of req) raw += chunk;

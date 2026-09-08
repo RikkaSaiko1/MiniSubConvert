@@ -9,7 +9,7 @@
 | **Quantumult X** | `qx`, `QX`, `QuantumultX` |
 | **Surge** | `surge`, `Surge`, `SurgeMac` |
 | **Loon** | `Loon` |
-| **Clash** | `Clash` |
+| **Clash** | `clash`, `Clash` |
 | **Clash Meta / Mihomo** | `meta`, `clashmeta`, `clash.meta`, `Clash.Meta`, `ClashMeta`, `mihomo`, `Mihomo` |
 | **Stash** | `stash`, `Stash` |
 | **Shadowrocket** | `shadowrocket`, `Shadowrocket`, `ShadowRocket` |
@@ -41,6 +41,8 @@
 
 ```
 GET <WORKER_DOMAIN>/<SECRET>/sub?target=<TARGET>&url=<URLS>
+
+GET <WORKER_DOMAIN>/<SECRET>/version
 ```
 
 *注意：`<SECRET>` 对应 Worker 环境变量中设置的 `SECRET` 值。*

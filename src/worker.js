@@ -8,9 +8,16 @@ export default {
 
         if (
             !(method === "POST" && pathname === `/${secret}/api/proxy/parse`) &&
-            !(method === "GET" && pathname === `/${secret}/sub`)
+            !(method === "GET" && (pathname === `/${secret}/sub` || pathname === `/${secret}/version`))
         ) {
             return new Response(null, { status: 403 });
+        }
+
+        if (method === "GET" && pathname === `/${secret}/version`) {
+            return new Response("subconverter v0.9.0 backend\n", {
+                status: 200,
+                headers: { "Content-Type": "text/plain; charset=utf-8" },
+            });
         }
 
         try {
