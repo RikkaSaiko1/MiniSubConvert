@@ -249,10 +249,13 @@ export function produceClashConfigOutput(list, type, opts = {}) {
     };
     const matchesFilter = (proxy, filter, aliases = []) => {
         const text = searchableText(proxy);
-        if (aliases.some((alias) => text.toLowerCase().includes(alias.toLowerCase()))) {
+        const aliasMatched = aliases.some((alias) =>
+            text.toLowerCase().includes(alias.toLowerCase()),
+        );
+        if (aliasMatched) {
             return true;
         }
-        if (!filter) return true;
+        if (!filter) return aliases.length === 0;
         try {
             const normalizedFilter = filter.replace(/^\(\?i\)/, '');
             return new RegExp(
@@ -278,8 +281,13 @@ export function produceClashConfigOutput(list, type, opts = {}) {
     };
     const resolvedExternalGroups = externalGroups.map((group) => {
         const resolvedGroup = resolveAllProxies(group);
-        if (!resolvedGroup['include-all']) return resolvedGroup;
         const groupAliases = aliasesForGroup(resolvedGroup.name);
+        const hasProxySource =
+            Array.isArray(resolvedGroup.proxies) ||
+            Array.isArray(resolvedGroup.use);
+        if (!resolvedGroup['include-all'] && hasProxySource) {
+            return resolvedGroup;
+        }
 
         const dynamicProxies = proxyNames.filter(
             (_, index) =>
