@@ -26,7 +26,12 @@ createServer(async (req, res) => {
 
     if (
         !(method === "POST" && pathname === `/${secret}/api/proxy/parse`) &&
-        !(method === "GET" && (pathname === `/${secret}/sub` || pathname === `/${secret}/version`))
+        !(method === "GET" && (
+            pathname === `/${secret}` ||
+            pathname === `/${secret}/` ||
+            pathname === `/${secret}/sub` ||
+            pathname === `/${secret}/version`
+        ))
     ) {
         writeHead(403);
         res.end();
@@ -35,7 +40,11 @@ createServer(async (req, res) => {
     }
 
     try {
-        if (method === "GET" && pathname === `/${secret}/version`) {
+        if (method === "GET" && (
+            pathname === `/${secret}` ||
+            pathname === `/${secret}/` ||
+            pathname === `/${secret}/version`
+        )) {
             writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
             res.end("subconverter v0.9.0 backend\n");
             log("200");

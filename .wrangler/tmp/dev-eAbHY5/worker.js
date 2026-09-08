@@ -63207,10 +63207,10 @@ var worker_default = {
     const pathname = new URL(request.url).pathname;
     const secret = env2.SECRET || "secret";
     if (method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
-    if (!(method === "POST" && pathname === `/${secret}/api/proxy/parse`) && !(method === "GET" && (pathname === `/${secret}/sub` || pathname === `/${secret}/version`))) {
+    if (!(method === "POST" && pathname === `/${secret}/api/proxy/parse`) && !(method === "GET" && (pathname === `/${secret}` || pathname === `/${secret}/` || pathname === `/${secret}/sub` || pathname === `/${secret}/version`))) {
       return withCors(new Response(null, { status: 403 }));
     }
-    if (method === "GET" && pathname === `/${secret}/version`) {
+    if (method === "GET" && (pathname === `/${secret}` || pathname === `/${secret}/` || pathname === `/${secret}/version`)) {
       return withCors(new Response("subconverter v0.9.0 backend\n", {
         status: 200,
         headers: { "Content-Type": "text/plain; charset=utf-8" }
@@ -63322,7 +63322,7 @@ var jsonError2 = /* @__PURE__ */ __name(async (request, env2, _ctx, middlewareCt
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError2;
 
-// .wrangler/tmp/bundle-vr9jpU/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-Jx3fMM/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -63354,7 +63354,7 @@ function __facade_invoke__(request, env2, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-vr9jpU/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-Jx3fMM/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class ___Facade_ScheduledController__ {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;
