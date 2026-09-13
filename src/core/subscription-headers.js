@@ -53,6 +53,26 @@ export function mergeSubscriptionUserInfo(headersList) {
         .join("; ");
 }
 
+// 部分订阅面板（如 MiSub）给第三方转换器返回的是「节点回调 URL」：
+// 形如 ?base64=&callback_token=external，它只输出节点、不输出 Subscription-Userinfo，
+// 导致客户端看不到流量统计。
+// 同一个面板的 ?target=nodes 分支输出完全等价的节点内容，但会附带流量头，
+// 且保留 callback_token 可继续跳过访问计数/通知，因此改写成该形式再请求。
+export function rewriteSourceForProfileHeaders(source) {
+    let url;
+    try {
+        url = new URL(source);
+    } catch {
+        return source;
+    }
+    if (!url.searchParams.has("callback_token")) return source;
+    if (url.searchParams.get("target") === "nodes") return source;
+
+    url.searchParams.delete("base64");
+    url.searchParams.set("target", "nodes");
+    return url.toString();
+}
+
 function toHeaderName(name) {
     return name.replace(/(^|-)([a-z])/g, (_, separator, char) => separator + char.toUpperCase());
 }

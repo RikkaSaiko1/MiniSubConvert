@@ -103,6 +103,30 @@ async function check(label, query, verify) {
             },
         },
         'https://plain.example/sub': { status: 200, body: TR },
+        // MiSub 回调源：原始 URL 无 userinfo，改写出的 ?target=nodes 版本有 userinfo。
+        'https://misub.example/Profile/Token?base64=&callback_token=external': {
+            status: 200,
+            body: TR,
+            headers: { 'x-misub-mode': 'external-nodes-callback' },
+        },
+        'https://misub.example/Profile/Token?callback_token=external&target=nodes': {
+            status: 200,
+            body: TR,
+            headers: {
+                'subscription-userinfo': UI,
+                'profile-update-interval': '24',
+                'x-misub-mode': 'node-export-plain',
+            },
+        },
+        // 改写版本存在但依然没有 userinfo -> 应回退原始 URL（原始 URL 有独特节点头）。
+        'https://fallback.example/sub?base64=&callback_token=external': {
+            status: 200,
+            body: 'trojan://orig@example.com:443#OriginalNode',
+        },
+        'https://fallback.example/sub?callback_token=external&target=nodes': {
+            status: 200,
+            body: 'trojan://rewritten@example.com:443#RewrittenNode',
+        },
     });
 
     const doInstance = new DO();
@@ -167,6 +191,22 @@ async function check(label, query, verify) {
         'cors headers still present alongside forwarded headers',
         `target=clash&url=${enc('https://a.example/sub')}`,
         (res) => res.headers.get('access-control-allow-origin') === '*',
+    );
+
+    await check(
+        'MiSub callback source is rewritten to target=nodes -> userinfo forwarded',
+        `target=clash&url=${enc('https://misub.example/Profile/Token?base64=&callback_token=external')}`,
+        (res) => res.headers.get('subscription-userinfo') === UI,
+    );
+
+    await check(
+        'rewrite carries no userinfo -> falls back to original source body',
+        `target=clash&url=${enc('https://fallback.example/sub?base64=&callback_token=external')}`,
+        (res, body) =>
+            res.status === 200 &&
+            res.headers.get('subscription-userinfo') === null &&
+            body.includes('OriginalNode') &&
+            !body.includes('RewrittenNode'),
     );
 
     console.log(`\n${pass} passed, ${fail} failed`);

@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { ProxyUtils } from "./core/proxy-utils";
 import { parseExternalConfig } from "./core/proxy-utils/producers/utils";
-import { collectForwardedHeaders } from "./core/subscription-headers";
+import { collectForwardedHeaders, rewriteSourceForProfileHeaders } from "./core/subscription-headers";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -17,9 +17,7 @@ function isSubscriptionUrl(source) {
     return /^https?:\/\//i.test(source);
 }
 
-async function resolveSource(source) {
-    if (!isSubscriptionUrl(source)) return { content: source, headers: null };
-
+async function fetchSource(source) {
     const response = await fetch(source);
     if (!response.ok) {
         throw new Error(
@@ -27,6 +25,25 @@ async function resolveSource(source) {
         );
     }
     return { content: await response.text(), headers: response.headers };
+}
+
+async function resolveSource(source) {
+    if (!isSubscriptionUrl(source)) return { content: source, headers: null };
+
+    const rewritten = rewriteSourceForProfileHeaders(source);
+    if (rewritten === source) return fetchSource(source);
+
+    // 改写后拿流量头；若改写版拿不到 userinfo 或请求失败，退回原始 URL，
+    // 保证节点内容不因改写而丢失。
+    try {
+        const rewrittenResult = await fetchSource(rewritten);
+        if (rewrittenResult.headers?.get("subscription-userinfo")) {
+            return rewrittenResult;
+        }
+    } catch {
+        /* 改写失败则走原始 URL */
+    }
+    return fetchSource(source);
 }
 
 
