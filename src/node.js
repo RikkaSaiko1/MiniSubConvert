@@ -8,6 +8,26 @@ const corsHeaders = {
     "Access-Control-Allow-Headers": "Content-Type",
 };
 
+// url 参数可以同时接受「订阅地址」和「节点链接」：
+// - http(s):// 的是订阅地址，需要先请求再解析；
+// - trojan://、vless://、ss:// 等本身就是节点内容，必须直接解析，
+//   否则 fetch() 会因不支持的协议抛错，导致整个请求 500。
+function isSubscriptionUrl(source) {
+    return /^https?:\/\//i.test(source);
+}
+
+async function resolveSource(source) {
+    if (!isSubscriptionUrl(source)) return source;
+
+    const response = await fetch(source);
+    if (!response.ok) {
+        throw new Error(
+            `failed to fetch subscription: ${source} -> HTTP ${response.status}`,
+        );
+    }
+    return response.text();
+}
+
 createServer(async (req, res) => {
     const method = (req.method || "").toUpperCase();
     const route = req.url || "";
@@ -95,7 +115,7 @@ createServer(async (req, res) => {
                     .split("|")
                     .map((item) => item.trim())
                     .filter(Boolean)
-                    .map((subscribeUrl) => fetch(subscribeUrl).then((response) => response.text())),
+                    .map((source) => resolveSource(source)),
             )
         ).flatMap((subContent) => ProxyUtils.parse(subContent));
         const result = ProxyUtils.produce(proxies, target, undefined, { externalConfig });
@@ -103,9 +123,11 @@ createServer(async (req, res) => {
         writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
         res.end(result);
         log("200", `parsed ${proxies.length} nodes, target client: ${target || "-"}`);
-    } catch {
-        writeHead(500);
-        res.end();
+    } catch (error) {
+        const message = (error && error.message) || String(error);
+        console.error(`${method} ${pathname} failed: ${(error && error.stack) || message}`);
+        writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end(`internal error: ${message}\n`);
         log("500");
     }
 }).listen(Number(process.env.PORT) || 3000, process.env.HOST || "0.0.0.0", () => {

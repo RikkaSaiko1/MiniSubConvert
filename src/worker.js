@@ -13,6 +13,35 @@ function withCors(response) {
     return new Response(response.body, { status: response.status, headers });
 }
 
+// url 参数可以同时接受「订阅地址」和「节点链接」：
+// - http(s):// 的是订阅地址，需要先请求再解析；
+// - trojan://、vless://、ss:// 等本身就是节点内容，必须直接解析，
+//   否则 fetch() 会因不支持的协议抛错，导致整个请求 500。
+function isSubscriptionUrl(source) {
+    return /^https?:\/\//i.test(source);
+}
+
+async function resolveSource(source) {
+    if (!isSubscriptionUrl(source)) return source;
+
+    const response = await fetch(source);
+    if (!response.ok) {
+        throw new Error(
+            `failed to fetch subscription: ${source} -> HTTP ${response.status}`,
+        );
+    }
+    return response.text();
+}
+
+function errorResponse(scope, error) {
+    const message = (error && error.message) || String(error);
+    console.error(`${scope} failed: ${(error && error.stack) || message}`);
+    return new Response(`internal error: ${message}\n`, {
+        status: 500,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+}
+
 export default {
     async fetch(request, env) {
         const method = request.method.toUpperCase();
@@ -50,8 +79,8 @@ export default {
         try {
             const response = await env.MiniSubConvert.get(env.MiniSubConvert.idFromName("minisubconvert")).fetch(request);
             return withCors(response);
-        } catch {
-            return withCors(new Response(null, { status: 500 }));
+        } catch (error) {
+            return withCors(errorResponse("durable object dispatch", error));
         }
     },
 };
@@ -103,7 +132,7 @@ export class MiniSubConvert {
                             .split("|")
                             .map((item) => item.trim())
                             .filter(Boolean)
-                            .map((subscribeUrl) => fetch(subscribeUrl).then((response) => response.text())),
+                            .map((source) => resolveSource(source)),
                     )
                 ).flatMap((subContent) => ProxyUtils.parse(subContent));
                 const result = ProxyUtils.produce(proxies, client, undefined, { externalConfig });
@@ -116,8 +145,8 @@ export class MiniSubConvert {
             }
 
             return new Response(null, { status: 403 });
-        } catch {
-            return new Response(null, { status: 500 });
+        } catch (error) {
+            return errorResponse(`${method} ${new URL(request.url).pathname}`, error);
         }
     }
 }
