@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { ProxyUtils } from "./core/proxy-utils";
 import { parseExternalConfig } from "./core/proxy-utils/producers/utils";
+import { collectForwardedHeaders } from "./core/subscription-headers";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -17,7 +18,7 @@ function isSubscriptionUrl(source) {
 }
 
 async function resolveSource(source) {
-    if (!isSubscriptionUrl(source)) return source;
+    if (!isSubscriptionUrl(source)) return { content: source, headers: null };
 
     const response = await fetch(source);
     if (!response.ok) {
@@ -25,8 +26,9 @@ async function resolveSource(source) {
             `failed to fetch subscription: ${source} -> HTTP ${response.status}`,
         );
     }
-    return response.text();
+    return { content: await response.text(), headers: response.headers };
 }
+
 
 createServer(async (req, res) => {
     const method = (req.method || "").toUpperCase();
@@ -109,18 +111,22 @@ createServer(async (req, res) => {
             externalConfig = parseExternalConfig(await configResponse.text());
         }
 
-        const proxies = (
-            await Promise.all(
-                rawUrls
-                    .split("|")
-                    .map((item) => item.trim())
-                    .filter(Boolean)
-                    .map((source) => resolveSource(source)),
-            )
-        ).flatMap((subContent) => ProxyUtils.parse(subContent));
+        const sources = await Promise.all(
+            rawUrls
+                .split("|")
+                .map((item) => item.trim())
+                .filter(Boolean)
+                .map((source) => resolveSource(source)),
+        );
+
+        const proxies = sources
+            .flatMap((source) => ProxyUtils.parse(source.content));
         const result = ProxyUtils.produce(proxies, target, undefined, { externalConfig });
 
-        writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+        writeHead(200, {
+            "Content-Type": "text/plain; charset=utf-8",
+            ...collectForwardedHeaders(sources.map((source) => source.headers)),
+        });
         res.end(result);
         log("200", `parsed ${proxies.length} nodes, target client: ${target || "-"}`);
     } catch (error) {

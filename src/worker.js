@@ -1,5 +1,6 @@
 import { ProxyUtils } from "./core/proxy-utils";
 import { parseExternalConfig } from "./core/proxy-utils/producers/utils";
+import { collectForwardedHeaders } from "./core/subscription-headers";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -22,7 +23,7 @@ function isSubscriptionUrl(source) {
 }
 
 async function resolveSource(source) {
-    if (!isSubscriptionUrl(source)) return source;
+    if (!isSubscriptionUrl(source)) return { content: source, headers: null };
 
     const response = await fetch(source);
     if (!response.ok) {
@@ -30,7 +31,7 @@ async function resolveSource(source) {
             `failed to fetch subscription: ${source} -> HTTP ${response.status}`,
         );
     }
-    return response.text();
+    return { content: await response.text(), headers: response.headers };
 }
 
 function errorResponse(scope, error) {
@@ -126,21 +127,27 @@ export class MiniSubConvert {
                     }
                     externalConfig = parseExternalConfig(await configResponse.text());
                 }
-                const proxies = (
-                    await Promise.all(
-                        rawUrls
-                            .split("|")
-                            .map((item) => item.trim())
-                            .filter(Boolean)
-                            .map((source) => resolveSource(source)),
-                    )
-                ).flatMap((subContent) => ProxyUtils.parse(subContent));
+                const sources = await Promise.all(
+                    rawUrls
+                        .split("|")
+                        .map((item) => item.trim())
+                        .filter(Boolean)
+                        .map((source) => resolveSource(source)),
+                );
+                const proxies = sources.flatMap((source) =>
+                    ProxyUtils.parse(source.content),
+                );
                 const result = ProxyUtils.produce(proxies, client, undefined, { externalConfig });
                 console.log(`parsed ${proxies.length} nodes, target client: ${client || "-"}`);
 
                 return new Response(result, {
                     status: 200,
-                    headers: { "Content-Type": "text/plain; charset=utf-8" },
+                    headers: {
+                        "Content-Type": "text/plain; charset=utf-8",
+                        ...collectForwardedHeaders(
+                            sources.map((source) => source.headers),
+                        ),
+                    },
                 });
             }
 
