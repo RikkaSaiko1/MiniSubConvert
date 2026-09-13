@@ -1013,7 +1013,7 @@ export default function URI_Producer() {
                         : ''
                 }${
                     proxy['protocol-param']
-                        ? '&protocolparam=' +
+                        ? '&protoparam=' +
                           Base64.encode(proxy['protocol-param'])
                         : ''
                 }`;
