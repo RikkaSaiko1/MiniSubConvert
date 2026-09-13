@@ -2,6 +2,7 @@ import _ from 'lodash';
 import YAML from '../../../utils/yaml';
 import { isIPv4, isIPv6 } from '../../../utils';
 import { normalizeClashYaml } from '../preprocessors';
+import $ from '../../app';
 
 export class Result {
     constructor(proxy) {
@@ -206,6 +207,61 @@ export function produceProxyListOutput(list, type, opts = {}) {
     );
 }
 
+// custom_proxy_group 里的 name 之后是节点名匹配条件（子串或正则），
+// 这里把它们求值成真实节点名；`.*` 展开为全部节点。
+function resolveGroupProxies(groups, groupFilters, list) {
+    const nodeNames = list.map((proxy) => proxy.name);
+
+    return groups.map((group) => {
+        const filters = groupFilters?.[group.name] || [];
+        const proxies = group.proxies.flatMap((item) => {
+            if (item !== '__ALL_PROXIES__') return [item];
+            return nodeNames;
+        });
+
+        for (const filter of filters) {
+            const regex = toFilterRegex(filter);
+            const matched = nodeNames.filter((name) => regex.test(name));
+            for (const name of matched) {
+                if (!proxies.includes(name)) proxies.push(name);
+            }
+        }
+
+        // 组内没有任何可用节点会被 mihomo 判为非法配置，直接丢弃该组
+        if (proxies.length === 0) {
+            $.error(
+                `proxy group ${group.name} has no proxies, it will be ignored`,
+            );
+            return null;
+        }
+
+        return { ...group, proxies };
+    }).filter(Boolean);
+}
+
+// custom_proxy_group 里的过滤条件可能是 PCRE 风格的内联标志 (如 `(?i)香港|HK`)，
+// 而 JS 的 RegExp 不支持 `(?i)`，这里转换后再构造。
+function toFilterRegex(filter) {
+    const flags = new Set();
+    const pattern = filter.replace(/\(\?([a-z]+)\)/gi, (matched, inlineFlags) => {
+        for (const flag of inlineFlags) {
+            if ('ims'.includes(flag)) flags.add(flag);
+        }
+        return '';
+    });
+
+    try {
+        return new RegExp(pattern, [...flags].join(''));
+    } catch {
+        // 仍不是合法正则时退化为子串匹配
+        return new RegExp(escapeRegExp(pattern), [...flags].join(''));
+    }
+}
+
+function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function produceClashConfigOutput(list, type, opts = {}) {
     if (type === 'internal') return list;
 
@@ -215,7 +271,11 @@ export function produceClashConfigOutput(list, type, opts = {}) {
         ? externalConfig.rules
         : [];
     const externalGroups = Array.isArray(externalConfig['proxy-groups'])
-        ? externalConfig['proxy-groups']
+        ? resolveGroupProxies(
+              externalConfig['proxy-groups'],
+              externalConfig.groupFilters,
+              list,
+          )
         : [];
 
     if (
@@ -252,6 +312,7 @@ export function parseExternalConfig(content) {
     const ruleProviders = {};
     const rules = [];
     const groups = [];
+    const groupFilters = {};
     const providerNames = new Set();
 
     for (const rawLine of text.split(/\r?\n/)) {
@@ -297,19 +358,27 @@ export function parseExternalConfig(content) {
                     group.proxies.push('__ALL_PROXIES__');
                 } else if (part.startsWith('[]')) {
                     group.proxies.push(part.slice(2));
+                } else {
+                    // 其余片段是节点名匹配条件（子串或正则），需在拿到节点列表后求值
+                    groupFilters[name] = [...(groupFilters[name] || []), part];
                 }
             }
             if (groupType === 'url-test') {
                 const url = parts.find((part) => /^https?:\/\//.test(part));
-                const interval = parts.find((part) => /^\d+$/.test(part));
                 if (url) group.url = url;
-                if (interval) group.interval = Number(interval);
+                // 该字段形如 `interval,timeout,tolerance`，三段落均可留空（如 `600,,50`）
+                const times = parts.find((part) => /^\d*\s*,\s*\d*\s*(,\s*\d*)?$/.test(part));
+                if (times) {
+                    const [interval, , tolerance] = times.split(',').map((value) => Number(value.trim()) || 0);
+                    if (interval > 0) group.interval = interval;
+                    if (tolerance > 0) group.tolerance = tolerance;
+                }
             }
             groups.push(group);
         }
     }
 
-    return { 'rule-providers': ruleProviders, rules, 'proxy-groups': groups };
+    return { 'rule-providers': ruleProviders, rules, 'proxy-groups': groups, groupFilters };
 }
 
 export function ensureUniqueProxyNames(list) {
@@ -319,7 +388,7 @@ export function ensureUniqueProxyNames(list) {
     return list.map((proxy) => {
         const name = proxy.name;
         let count = nameCounts.get(name) || 0;
-        let uniqueName = name;
+        let uniqueName;
 
         do {
             count += 1;
