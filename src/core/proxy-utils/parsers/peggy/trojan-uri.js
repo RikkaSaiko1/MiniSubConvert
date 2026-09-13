@@ -5,7 +5,7 @@ import {
   getPathQueryParam,
   parseSafeIntegerValue,
 } from '../../transport-path';
-import { isIPv6 } from '@/utils';
+import { isIPv6 } from '../../../../utils';
 
 const unsafePathSegments = new Set(["__proto__", "constructor", "prototype"]);
 

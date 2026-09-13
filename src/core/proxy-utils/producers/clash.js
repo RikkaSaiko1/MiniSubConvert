@@ -2,13 +2,13 @@ import {
     isPresent,
     ensureUniqueProxyNames,
     produceClashConfigOutput,
-} from '@/core/proxy-utils/producers/utils';
+} from './utils';
 import { normalizeClashVmessSecurity } from '../vmess-security';
 import {
     deleteHttpUpgradeEarlyDataMetadata,
     normalizeWebSocketEarlyDataPath,
 } from '../transport-path';
-import $ from '@/core/app';
+import $ from '../../app';
 
 export default function Clash_Producer() {
     const type = 'ALL';

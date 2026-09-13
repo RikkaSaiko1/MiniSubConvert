@@ -1,7 +1,7 @@
 /* eslint-disable no-case-declarations */
 import { Base64 } from 'js-base64';
 import URI_Producer from './uri';
-import $ from '@/core/app';
+import $ from '../../app';
 
 const URI = URI_Producer();
 

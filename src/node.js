@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
-import { ProxyUtils } from "@/core/proxy-utils";
-import { parseExternalConfig } from "@/core/proxy-utils/producers/utils";
+import { ProxyUtils } from "./core/proxy-utils";
+import { parseExternalConfig } from "./core/proxy-utils/producers/utils";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",

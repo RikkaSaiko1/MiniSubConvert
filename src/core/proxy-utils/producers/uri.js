@@ -1,7 +1,7 @@
 /* eslint-disable no-case-declarations */
 import { Base64 } from 'js-base64';
-import $ from '@/core/app';
-import { isIPv6, isPlainObject } from '@/utils';
+import $ from '../../app';
+import { isIPv6, isPlainObject } from '../../../utils';
 import { getWireGuardAddressWithCIDR, normalizePluginMuxValue } from './utils';
 import {
     normalizeXhttpIntegerValue,

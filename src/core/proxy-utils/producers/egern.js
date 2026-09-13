@@ -1,4 +1,4 @@
-import $ from '@/core/app';
+import $ from '../../app';
 import {
     getWireGuardAddressWithCIDR,
     isPresent,

@@ -51,7 +51,7 @@ let handler;
 let env;
 
 (async () => {
-    const mod = await import(pathToFileURL(path.resolve('dist/worker.js')).href);
+    const mod = await import(pathToFileURL(path.resolve('src/worker.js')).href);
     handler = mod.default;
     const DO = mod.MiniSubConvert;
 

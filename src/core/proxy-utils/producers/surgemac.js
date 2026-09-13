@@ -2,8 +2,8 @@ import { Base64 } from 'js-base64';
 import { Result, isPresent } from './utils';
 import Surge_Producer, { SurgeUnsupportedProxyError } from './surge';
 import ClashMeta_Producer from './clashmeta';
-import { isIPv4, isIPv6 } from '@/utils';
-import $ from '@/core/app';
+import { isIPv4, isIPv6 } from '../../../utils';
+import $ from '../../app';
 
 const targetPlatform = 'SurgeMac';
 

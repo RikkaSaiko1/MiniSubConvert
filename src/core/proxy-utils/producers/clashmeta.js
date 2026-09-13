@@ -6,14 +6,14 @@ import {
     produceClashConfigOutput,
     restoreShadowTLSProxyOpts,
     supportsShadowsocksV2rayPluginMode,
-} from '@/core/proxy-utils/producers/utils';
-import { isNotBlank, isPlainObject } from '@/utils';
+} from './utils';
+import { isNotBlank, isPlainObject } from '../../../utils';
 import {
     deleteHttpUpgradeEarlyDataMetadata,
     normalizeWebSocketEarlyDataPath,
 } from '../transport-path';
 import { ECH_DNS_FIELD } from '../ech-utils';
-import $ from '@/core/app';
+import $ from '../../app';
 import { normalizeVmessSecurity } from '../vmess-security';
 
 const ipVersions = {

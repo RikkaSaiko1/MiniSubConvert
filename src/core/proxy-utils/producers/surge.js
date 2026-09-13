@@ -1,6 +1,6 @@
 import { Result, isPresent } from './utils';
-import { isNotBlank, getIfNotBlank } from '@/utils';
-import $ from '@/core/app';
+import { isNotBlank, getIfNotBlank } from '../../../utils';
+import $ from '../../app';
 import { formatSurgeVmessEncryptMethod } from '../vmess-security';
 
 const targetPlatform = 'Surge';

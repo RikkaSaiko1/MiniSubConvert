@@ -1,6 +1,6 @@
-import { safeLoad } from '@/utils/yaml';
+import { safeLoad } from '../../../utils/yaml';
 import { Base64 } from 'js-base64';
-import $ from '@/core/app';
+import $ from '../../app';
 
 export function normalizeClashYaml(raw) {
     if (

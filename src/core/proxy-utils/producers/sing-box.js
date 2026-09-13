@@ -1,6 +1,6 @@
 import ClashMeta_Producer from './clashmeta';
-import $ from '@/core/app';
-import { isPlainObject } from '@/utils';
+import $ from '../../app';
+import { isPlainObject } from '../../../utils';
 import { getWireGuardAddressWithCIDR, normalizePluginMuxValue } from './utils';
 import {
     extractPathQueryParam,

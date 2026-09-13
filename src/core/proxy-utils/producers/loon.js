@@ -1,8 +1,8 @@
 /* eslint-disable no-case-declarations */
 const targetPlatform = 'Loon';
 import { isPresent, Result } from './utils';
-import { isIPv4, isIPv6 } from '@/utils';
-import $ from '@/core/app';
+import { isIPv4, isIPv6 } from '../../../utils';
+import $ from '../../app';
 import { formatLoonVmessSecurity } from '../vmess-security';
 
 const ipVersions = {

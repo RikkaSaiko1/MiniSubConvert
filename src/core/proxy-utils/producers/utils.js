@@ -1,7 +1,7 @@
 import _ from 'lodash';
-import YAML from '@/utils/yaml';
-import { isIPv4, isIPv6 } from '@/utils';
-import { normalizeClashYaml } from '@/core/proxy-utils/preprocessors';
+import YAML from '../../../utils/yaml';
+import { isIPv4, isIPv6 } from '../../../utils';
+import { normalizeClashYaml } from '../preprocessors';
 
 export class Result {
     constructor(proxy) {

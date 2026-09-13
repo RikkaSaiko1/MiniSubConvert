@@ -1,4 +1,4 @@
-import rs from '@/utils/rs';
+import rs from '../../utils/rs';
 import {
     isIPv4,
     isIPv6,
@@ -7,11 +7,11 @@ import {
     isNotBlank,
     getRandomPort,
     numberToString,
-} from '@/utils';
+} from '../../utils';
 import PROXY_PREPROCESSORS from './preprocessors';
 import PROXY_PRODUCERS from './producers';
 import PROXY_PARSERS from './parsers';
-import $ from '@/core/app';
+import $ from '../app';
 import { isPresent } from './producers/utils';
 
 function preprocess(raw) {

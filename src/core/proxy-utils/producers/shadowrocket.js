@@ -5,12 +5,12 @@ import {
     produceProxyListOutput,
     restoreShadowTLSProxyOpts,
     supportsShadowsocksV2rayPluginMode,
-} from '@/core/proxy-utils/producers/utils';
+} from './utils';
 import {
     deleteHttpUpgradeEarlyDataMetadata,
     normalizeWebSocketEarlyDataPath,
 } from '../transport-path';
-import $ from '@/core/app';
+import $ from '../../app';
 import { normalizeVmessSecurity } from '../vmess-security';
 
 export default function Shadowrocket_Producer() {

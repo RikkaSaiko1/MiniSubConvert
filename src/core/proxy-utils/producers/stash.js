@@ -2,13 +2,13 @@ import {
     isPresent,
     produceProxyListOutput,
     supportsShadowsocksV2rayPluginMode,
-} from '@/core/proxy-utils/producers/utils';
+} from './utils';
 import { normalizeClashVmessSecurity } from '../vmess-security';
 import {
     deleteHttpUpgradeEarlyDataMetadata,
     normalizeWebSocketEarlyDataPath,
 } from '../transport-path';
-import $ from '@/core/app';
+import $ from '../../app';
 
 export default function Stash_Producer() {
     const type = 'ALL';

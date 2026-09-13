@@ -24,8 +24,6 @@ function createPaths() {
         buildParsersIndexPath: path.join(buildParsersDir, 'index.js'),
         nodeEntryPath: path.join(buildSrcDir, 'node.js'),
         nodeOutputPath: path.join(rootDir, 'dist/minisubconvert.js'),
-        workerEntryPath: path.join(buildSrcDir, 'worker.js'),
-        workerOutputPath: path.join(rootDir, 'dist/worker.js'),
         proxyUtilsEntryPath: path.join(buildSrcDir, 'core/proxy-utils/index.js'),
         proxyUtilsOutputPath: path.join(rootDir, 'dist/proxy-utils.js'),
     };
@@ -223,26 +221,10 @@ async function buildProxyUtilsBundle() {
     await buildBundle(PATHS.proxyUtilsEntryPath, PATHS.proxyUtilsOutputPath);
 }
 
-async function buildWorkerBundle() {
-    await esbuild.build({
-        entryPoints: [PATHS.workerEntryPath],
-        outfile: PATHS.workerOutputPath,
-        bundle: true,
-        format: 'esm',
-        platform: 'neutral',
-        mainFields: ['module', 'main'],
-        target: 'es2022',
-        sourcemap: false,
-        tsconfig: PATHS.buildTsconfigPath,
-        logLevel: 'info',
-    });
-}
-
 async function main() {
     try {
         compilePeggyParsers();
         await buildNodeBundle();
-        await buildWorkerBundle();
         await buildProxyUtilsBundle();
     } catch (error) {
         console.error('Build failed:', error);

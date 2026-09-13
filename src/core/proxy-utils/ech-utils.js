@@ -1,4 +1,4 @@
-import { isNotBlank, isPlainObject } from '@/utils';
+import { isNotBlank, isPlainObject } from '../../utils';
 
 export const ECH_DNS_FIELD = '_dns';
 export const ECH_FORCE_QUERY_FIELD = '_force-query';
