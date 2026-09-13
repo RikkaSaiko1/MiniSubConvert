@@ -211,8 +211,16 @@ export function produceProxyListOutput(list, type, opts = {}) {
 // 这里把它们求值成真实节点名；`.*` 展开为全部节点。
 function resolveGroupProxies(groups, groupFilters, list) {
     const nodeNames = list.map((proxy) => proxy.name);
+    const builtins = new Set([
+        'DIRECT',
+        'REJECT',
+        'REJECT-DROP',
+        'PASS',
+        'COMPATIBLE',
+        'GLOBAL',
+    ]);
 
-    return groups.map((group) => {
+    const resolved = groups.map((group) => {
         const filters = groupFilters?.[group.name] || [];
         const proxies = group.proxies.flatMap((item) => {
             if (item !== '__ALL_PROXIES__') return [item];
@@ -227,16 +235,39 @@ function resolveGroupProxies(groups, groupFilters, list) {
             }
         }
 
-        // 组内没有任何可用节点会被 mihomo 判为非法配置，直接丢弃该组
-        if (proxies.length === 0) {
-            $.error(
-                `proxy group ${group.name} has no proxies, it will be ignored`,
-            );
-            return null;
-        }
-
         return { ...group, proxies };
-    }).filter(Boolean);
+    });
+
+    // 配置里的组引用可能指向一个没有任何节点落入、因而被丢弃的地区组
+    // （例如订阅里没有香港节点）。mihomo 遇到这类悬空引用会直接报错，
+    // 这里反复剔除悬空引用，直到不再有组因为成员被清空而消失。
+    let kept = resolved;
+    for (;;) {
+        const names = new Set(kept.map((group) => group.name));
+        const builtinOrNode = (name) => builtins.has(name) || nodeNames.includes(name);
+        const next = kept
+            .map((group) => ({
+                ...group,
+                proxies: group.proxies.filter(
+                    (name) => builtinOrNode(name) || names.has(name),
+                ),
+            }))
+            .filter((group) => {
+                if (group.proxies.length > 0) return true;
+                $.error(
+                    `proxy group ${group.name} has no proxies, it will be ignored`,
+                );
+                return false;
+            });
+
+        if (next.length === kept.length) {
+            kept = next;
+            break;
+        }
+        kept = next;
+    }
+
+    return kept;
 }
 
 // custom_proxy_group 里的过滤条件可能是 PCRE 风格的内联标志 (如 `(?i)香港|HK`)，
@@ -277,6 +308,10 @@ export function produceClashConfigOutput(list, type, opts = {}) {
               list,
           )
         : [];
+
+    if (externalGroups.length > 0) {
+        renameCollidingProxies(externalGroups, list);
+    }
 
     if (
         externalGroups.length === 0 &&
@@ -379,6 +414,57 @@ export function parseExternalConfig(content) {
     }
 
     return { 'rule-providers': ruleProviders, rules, 'proxy-groups': groups, groupFilters };
+}
+
+// mihomo 判断策略组是否成环时按名字解析引用，成员名只要“看起来指向组自身”
+// 就会误判。典型场景：节点名为 `SG`，而存在名为 `🇸🇬 SG` 的策略组。
+// 这里把这类会撞车的节点名改写掉，避免 mihomo 报 loop is detected。
+function renameCollidingProxies(groups, list) {
+    const groupNames = groups.map((group) => group.name);
+    if (groupNames.length === 0) return list;
+
+    const used = new Set(list.map((proxy) => proxy.name));
+    const renames = new Map();
+
+    // `SG 2` 这类名字来自重名去重。mihomo 按名字解析引用，只要成员名本身
+    // “看起来就是”某个组名（去掉国旗等前缀后完全相同）就会误判成环。
+    const collides = (nodeName) => {
+        // 去掉重名去重追加的 ` N` 序号后再比较
+        const base = nodeName.replace(/\s+\d+$/, '');
+        return groupNames.some((groupName) => {
+            const trimmed = groupName.trim();
+            if (trimmed === nodeName || trimmed === base) return true;
+            // 组名形如 `🇸🇬 SG`、节点名形如 `SG`：去掉国旗/emoji 等前缀字符后
+            // 与节点名完全一致，mihomo 会把它当成对组自身的引用
+            const stripped = trimmed.replace(/^[^\p{L}\p{N}]+/u, '');
+            return stripped === base;
+        });
+    };
+
+    for (const proxy of list) {
+        const name = proxy.name;
+        if (renames.has(name) || !collides(name)) continue;
+
+        let candidate = `${name} ·node`;
+        let suffix = 2;
+        while (used.has(candidate)) candidate = `${name} ·node${suffix++}`;
+
+        used.add(candidate);
+        renames.set(name, candidate);
+    }
+
+    if (renames.size === 0) return list;
+
+    const mapName = (name) => renames.get(name) || name;
+
+    for (const proxy of list) {
+        proxy.name = mapName(proxy.name);
+    }
+    for (const group of groups) {
+        group.proxies = group.proxies.map(mapName);
+    }
+
+    return list;
 }
 
 export function ensureUniqueProxyNames(list) {
