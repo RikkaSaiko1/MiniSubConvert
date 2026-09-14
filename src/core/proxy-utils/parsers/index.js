@@ -2497,10 +2497,24 @@ function URI_Trojan() {
     };
 
     const parse = (line) => {
-        const matched = /^(trojan:\/\/.*?@.*?)(:(\d+))?\/?(\?.*?)?$/.exec(line);
-        const port = matched?.[2];
-        if (!port) {
-            line = line.replace(matched[1], `${matched[1]}:443`);
+        // 只在 authority 段缺少显式端口时补默认 443。
+        // 必须以 authority 为界做替换（而不是 `line.replace(group1, ...)`），
+        // 否则端口会被插进节点名里（如 "name:443"）。
+        const authorityEnd = line.search(/[?#]/);
+        const authority =
+            authorityEnd === -1 ? line : line.slice(0, authorityEnd);
+        const rest = authorityEnd === -1 ? '' : line.slice(authorityEnd);
+        const atIndex = authority.lastIndexOf('@');
+        if (atIndex !== -1) {
+            const hostPart = authority.slice(atIndex + 1);
+            const hasPort = /:\d+\/?$/.test(hostPart);
+            if (!hasPort) {
+                const hasSlash = hostPart.endsWith('/');
+                const host = hasSlash ? hostPart.slice(0, -1) : hostPart;
+                line = `${authority.slice(0, atIndex + 1)}${host}:443${
+                    hasSlash ? '/' : ''
+                }${rest}`;
+            }
         }
         let [newLine, name] = line.split(/#(.+)/, 2);
         const parser = getTrojanURIParser();
