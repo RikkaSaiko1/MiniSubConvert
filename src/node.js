@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { ProxyUtils } from "./core/proxy-utils";
 import { resolveExternalConfig } from "./core/proxy-utils/producers/utils";
-import { collectForwardedHeaders, rewriteSourceForProfileHeaders } from "./core/subscription-headers";
+import { collectForwardedHeaders, contentTypeForTarget, rewriteSourceForProfileHeaders } from "./core/subscription-headers";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -142,7 +142,7 @@ createServer(async (req, res) => {
         const result = ProxyUtils.produce(proxies, target, undefined, { externalConfig });
 
         writeHead(200, {
-            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Type": contentTypeForTarget(target),
             ...collectForwardedHeaders(sources.map((source) => source.headers)),
         });
         res.end(result);

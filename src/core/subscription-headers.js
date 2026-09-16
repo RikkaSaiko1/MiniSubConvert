@@ -77,6 +77,23 @@ function toHeaderName(name) {
     return name.replace(/(^|-)([a-z])/g, (_, separator, char) => separator + char.toUpperCase());
 }
 
+// 客户端按 Content-Type 决定怎么解析订阅。全部返回 text/plain 会让
+// Clash Verge / Stash 这类严格校验的客户端拒绝 YAML/JSON 响应。
+// uri / v2ray 输出的是节点链接和 base64 正文，仍是纯文本，不能标成 JSON。
+const TARGET_CONTENT_TYPES = [
+    [/^(clash|meta|clashmeta|clash\.meta|mihomo|stash)$/i, "application/x-yaml; charset=utf-8"],
+    [/^(singbox|sing-box|egern|egern-mac|json)$/i, "application/json; charset=utf-8"],
+];
+const DEFAULT_CONTENT_TYPE = "text/plain; charset=utf-8";
+
+export function contentTypeForTarget(target) {
+    const name = String(target || "").trim();
+    for (const [pattern, contentType] of TARGET_CONTENT_TYPES) {
+        if (pattern.test(name)) return contentType;
+    }
+    return DEFAULT_CONTENT_TYPE;
+}
+
 export function collectForwardedHeaders(headersList) {
     const forwarded = {};
 

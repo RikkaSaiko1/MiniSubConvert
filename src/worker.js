@@ -1,6 +1,6 @@
 import { ProxyUtils } from "./core/proxy-utils";
 import { resolveExternalConfig } from "./core/proxy-utils/producers/utils";
-import { collectForwardedHeaders, rewriteSourceForProfileHeaders } from "./core/subscription-headers";
+import { collectForwardedHeaders, contentTypeForTarget, rewriteSourceForProfileHeaders } from "./core/subscription-headers";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -163,7 +163,7 @@ export class MiniSubConvert {
                 return new Response(result, {
                     status: 200,
                     headers: {
-                        "Content-Type": "text/plain; charset=utf-8",
+                        "Content-Type": contentTypeForTarget(client),
                         ...collectForwardedHeaders(
                             sources.map((source) => source.headers),
                         ),

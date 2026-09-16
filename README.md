@@ -54,6 +54,8 @@ GET <WORKER_DOMAIN>/<SECRET>/version
 参数说明
 
 - **target**: 目标平台格式（请参考上方支持列表）。
+    - 响应会带上与目标格式匹配的 `Content-Type`（Clash 系为 `application/x-yaml`，sing-box / JSON 为 `application/json`，其余为 `text/plain`），以便客户端正确解析。
+    - 不在支持列表中的目标（如 `clashr`、`quanx`、`mixed`）会返回 `500`，错误信息中会指明该平台不被支持。
 - **url**: 原始订阅链接。
     - **多订阅合并**：如果需要合并多个订阅，请使用竖线 `|` 分隔链接。
     - **URL 编码**：最终拼接后的字符串必须进行 **URL Encode** 编码。
