@@ -67,6 +67,27 @@ function parseGroups(yaml) {
     return groups;
 }
 
+// `proxies:` 段里实际存在的节点名。组员名若不在其中也不在组名里，
+// mihomo 就只能把它当作无效引用或同名组引用处理。
+function parseNodeNames(yaml) {
+    const lines = String(yaml).split(/\r?\n/);
+    const names = new Set();
+    let inProxies = false;
+
+    for (const raw of lines) {
+        if (/^proxies:/.test(raw)) {
+            inProxies = true;
+            continue;
+        }
+        if (inProxies && /^[a-zA-Z_-]+:/.test(raw)) break;
+        if (!inProxies) continue;
+
+        const m = raw.match(/^\s+name:\s*(.+)$/);
+        if (m) names.add(m[1].trim());
+    }
+    return names;
+}
+
 function findLoops(groups) {
     const names = new Set(groups.map((g) => g.name));
     const graph = new Map(
@@ -232,6 +253,31 @@ let env;
             pass('`🚀 PROXY` 里的 `🇸🇬 SG` 仍是对组的引用');
         } else {
             fail(`\`🚀 PROXY\` 丢失了对组 \`🇸🇬 SG\` 的引用: ${proxy ? proxy.proxies.join(', ') : 'N/A'}`);
+        }
+
+        // 与组同名的节点必须【跟着 proxies 段一起改名】。若组员仍写原名，
+        // 该名字在 proxies 段里已不存在，mihomo 只能把它解析成对同名组的
+        // 引用，于是 `🚀 PROXY -> 🇸🇬 SG` 这类边被凭空造出来 -> loop is detected。
+        const nodeNamesInDoc = parseNodeNames(body);
+        const unresolved = [];
+        for (const g of groups) {
+            for (const m of g.proxies) {
+                const isBuiltin = ['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE', 'GLOBAL'].includes(m);
+                if (!isBuiltin && !nodeNamesInDoc.has(m) && !names.includes(m)) {
+                    unresolved.push(`${g.name} -> ${m}`);
+                }
+            }
+        }
+        if (unresolved.length === 0) {
+            pass('所有组员都能在 proxies 段或组名里解析到');
+        } else {
+            fail(`组员无法解析（会退化成组引用）: ${unresolved.join(' ; ')}`);
+        }
+
+        if (proxy && proxy.proxies.includes('🇯🇵 JP ·node') && proxy.proxies.includes('🇯🇵 JP')) {
+            pass('同名节点 `🇯🇵 JP` 与组引用 `🇯🇵 JP` 被正确区分');
+        } else {
+            fail(`同名节点/组引用未区分: ${proxy ? proxy.proxies.join(', ') : 'N/A'}`);
         }
 
         const youtube = groupOf(groups, '▶️ YouTube');

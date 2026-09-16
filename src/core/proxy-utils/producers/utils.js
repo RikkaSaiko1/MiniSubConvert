@@ -209,6 +209,12 @@ export function produceProxyListOutput(list, type, opts = {}) {
 
 // custom_proxy_group 里的 name 之后是节点名匹配条件（子串或正则），
 // 这里把它们求值成真实节点名；`.*` 展开为全部节点。
+// 组引用用 `{ __groupRef: name }` 哨兵包裹，以便在 `proxies` 数组被重建时
+// 仍能区分“这是引用策略组”与“这是节点”。其余位置一律按名字处理。
+function refName(item) {
+    return item && typeof item === 'object' ? item.__groupRef : item;
+}
+
 function resolveGroupProxies(groups, groupFilters, list) {
     const nodeNames = list.map((proxy) => proxy.name);
     const builtins = new Set([
@@ -234,8 +240,8 @@ function resolveGroupProxies(groups, groupFilters, list) {
             // `🇸🇬 SG`、`🇯🇵 JP` 就是组引用）；不指向任何组时才退化成
             // 节点名过滤条件。
             if (groupNames.has(filter)) {
-                if (filter !== group.name && !proxies.includes(filter)) {
-                    proxies.push(filter);
+                if (filter !== group.name && !proxies.some((item) => refName(item) === filter)) {
+                    proxies.push({ __groupRef: filter });
                 }
                 continue;
             }
@@ -259,7 +265,7 @@ function resolveGroupProxies(groups, groupFilters, list) {
             .map((group) => ({
                 ...group,
                 proxies: group.proxies.filter(
-                    (name) => builtinOrNode(name) || names.has(name),
+                    (item) => builtinOrNode(refName(item)) || names.has(refName(item)),
                 ),
             }))
             .filter((group) => {
@@ -288,15 +294,16 @@ function resolveGroupProxies(groups, groupFilters, list) {
         if (from === target) return true;
         if (breaksLoop.has(from) || visited.has(from)) return false;
         visited.add(from);
-        for (const member of from.proxies) {
-            const nested = groupByName.get(member);
+        for (const item of from.proxies) {
+            const nested = groupByName.get(refName(item));
             if (nested && reaches(nested, target)) return true;
         }
         return false;
     };
 
     for (const group of kept) {
-        const next = group.proxies.filter((member) => {
+        const next = group.proxies.filter((item) => {
+            const member = refName(item);
             if (member === group.name) return false;
             const nested = groupByName.get(member);
             if (!nested) return true;
@@ -373,7 +380,7 @@ export function produceClashConfigOutput(list, type, opts = {}) {
         : [];
 
     if (externalGroups.length > 0) {
-        renameCollidingProxies(externalGroups, list, externalConfig.groupRefs);
+        renameCollidingProxies(externalGroups, list);
     }
 
     if (
@@ -462,7 +469,11 @@ export function parseExternalConfig(content) {
                 } else if (part.startsWith('[]')) {
                     const ref = part.slice(2);
                     refs.add(ref);
-                    group.proxies.push(ref);
+                    // 用哨兵标记“这是组引用”。节点名可能和组名完全相同
+                    // （订阅里就有叫 `🇯🇵 JP` 的节点，而同时存在 `🇯🇵 JP` 组），
+                    // 只有来源标记能区分二者；后续 resolveGroupProxies 会重建
+                    // `proxies` 数组，因此标记必须随元素一起流动。
+                    group.proxies.push({ __groupRef: ref });
                 } else {
                     // 其余片段是节点名匹配条件（子串或正则），需在拿到节点列表后求值
                     groupFilters[name] = [...(groupFilters[name] || []), part];
@@ -508,12 +519,18 @@ export async function resolveExternalConfig(config) {
 }
 
 // mihomo 判断策略组是否成环时按名字解析引用：成员名只要“看起来指向某个组”
-// 就会被当成组引用。典型场景：节点名为 `SG`，而存在名为 `🇸🇬 SG` 的策略组，
-// 于是组里那个 `SG` 成员被 mihomo 解析成对组自身的引用 -> loop is detected。
-// 这里只改写“确实是节点”的名字，组引用一律保持原样。
-function renameCollidingProxies(groups, list, groupRefs = {}) {
+// 就会被当成组引用。典型场景：节点名为 `🇯🇵 JP`，而同时存在 `🇯🇵 JP` 策略组，
+// 于是该节点在组里会被 mihomo 当成对组自身的引用 -> loop is detected。
+// 这里只改写“确实是节点”的名字，`[]X` 组引用一律保持原样。
+function renameCollidingProxies(groups, list) {
     const groupNameSet = new Set(groups.map((group) => group.name));
-    if (groupNameSet.size === 0) return list;
+    if (groupNameSet.size === 0) {
+        // 即便没有组名可比对，也必须解包组引用哨兵，避免对象泄漏进 YAML。
+        for (const group of groups) {
+            group.proxies = group.proxies.map((item) => refName(item));
+        }
+        return list;
+    }
 
     const nodeNames = new Set(list.map((proxy) => proxy.name));
     const used = new Set([...nodeNames, ...groupNameSet]);
@@ -547,19 +564,28 @@ function renameCollidingProxies(groups, list, groupRefs = {}) {
         renames.set(name, candidate);
     }
 
-    if (renames.size === 0) return list;
-
+    // 即便没有节点需要改名，也要继续做组员校正：`proxies` 段里不存在的
+    // 名字若恰好等于某个组名，会被 mihomo 当成组引用，可能凭空造出环路。
     for (const proxy of list) {
         proxy.name = renames.get(proxy.name) || proxy.name;
     }
 
-    // 组引用必须原样保留：`[]🇯🇵 JP` 是引用组 `🇯🇵 JP`，即便存在同名节点
+    // 组引用必须原样保留：`[]🇯🇵 JP` 是引用组 `🇯🇵 JP`，即便订阅里存在同名节点
     // 也不能被改名，否则组之间的引用会丢失。
+    //
+    // 但“同名”并不能说明成员是引用还是节点 —— 必须靠 parse 阶段留下的
+    // `{ __groupRef }` 哨兵判断：带哨兵的是引用；过滤条件（`.*`、正则）展开
+    // 出来的则是节点，必须跟着 `proxies` 段一起改名，否则成员名在 `proxies`
+    // 里不存在，mihomo 只能把它解析成对同名策略组的引用，从而产生
+    // loop is detected。
+    //
+    // YAML 形式的配置走不到这里（没有 `[]X` 语法，`groupRefs` 为空），
+    // 因此哨兵是唯一的判据。
     for (const group of groups) {
-        const refs = groupRefs[group.name];
-        group.proxies = group.proxies.map((name) => {
-            if (refs?.has(name) || groupNameSet.has(name)) return name;
-            return renames.get(name) || name;
+        group.proxies = group.proxies.map((item) => {
+            const name = refName(item);
+            const isRef = item !== null && typeof item === 'object';
+            return isRef ? name : (renames.get(name) || name);
         });
     }
 
