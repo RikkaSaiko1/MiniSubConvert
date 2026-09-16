@@ -99,6 +99,44 @@ const fail = (msg) => { failed += 1; console.log(`[FAIL] ${msg}`); };
         else fail(`ruleset 组名未 trim: "${rule}"`);
     }
 
+    console.log('\n=== 2.5 值首尾双引号被剥离（subconverter trimQuote）===');
+    expectGroups('引号包裹的组名', '[custom]\ncustom_proxy_group="A"`select`.*', ['A']);
+    {
+        // 引号包裹的组名必须与 `[]A` 组引用对得上，否则成员会被当成
+        // 悬空引用剔除，策略组凭空变空。
+        const cfg = parseExternalConfig(
+            '[custom]\ncustom_proxy_group="🚀 P"`select`[]"♻️ AUTO"\ncustom_proxy_group="♻️ AUTO"`url-test`.*`http://x`300',
+        );
+        const refs = cfg.groupRefs['🚀 P'];
+        const groups = names(cfg);
+        if (groups.includes('🚀 P') && groups.includes('♻️ AUTO') && refs && refs.has('♻️ AUTO')) {
+            pass('引号包裹的组名与组引用都能正确配对');
+        } else {
+            fail(`引号包裹解析不一致: 组=[${groups.join(' | ')}] refs=${JSON.stringify([...(refs || [])])}`);
+        }
+    }
+    expectGroups('引号包裹的 ruleset 组名', '[custom]\nruleset="G",[]FINAL', []);
+    {
+        const cfg = parseExternalConfig('[custom]\nruleset="G",[]FINAL');
+        const rule = (cfg.rules || [])[0] || '';
+        if (rule.endsWith(',G')) pass(`ruleset 引号被剥离: "${rule}"`);
+        else fail(`ruleset 引号未剥离: "${rule}"`);
+    }
+    {
+        // 只剥首尾引号，中间的引号必须原样保留
+        const cfg = parseExternalConfig('[custom]\ncustom_proxy_group=A"B"C`select`.*');
+        const name = names(cfg)[0];
+        if (name === 'A"B"C') pass('中间引号被保留');
+        else fail(`中间引号被破坏: "${name}"`);
+    }
+    {
+        // 只有一个引号时不应剥（不是成对的首尾引号）
+        const cfg = parseExternalConfig('[custom]\ncustom_proxy_group="A`select`.*');
+        const name = names(cfg)[0];
+        if (name === '"A') pass('单个引号不剥离');
+        else fail(`单个引号被误剥离: "${name}"`);
+    }
+
     console.log('\n=== 3. 键名大小写不敏感（iniparser tolower）===');
     expectGroups('全大写 CUSTOM_PROXY_GROUP', '[custom]\nCUSTOM_PROXY_GROUP=A`select`.*', ['A']);
     expectGroups('混合 Custom_Proxy_Group', '[custom]\nCustom_Proxy_Group=A`select`.*', ['A']);

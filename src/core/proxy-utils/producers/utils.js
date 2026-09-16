@@ -416,6 +416,18 @@ export function produceClashConfigOutput(list, type, opts = {}) {
 // 认为是合法的，两边产物不一致就会在后续导入时产生引用了不存在组的成员。
 const INI_DIRECTIVE_RE = /^([A-Za-z_][\w]*)\s*=\s*(.*)$/;
 
+// subconverter 的 iniparser 读取配置后会做 `trimQuote()`，即剥掉值「首尾」的
+// 双引号。因此 `custom_proxy_group="A"`select`...` 的组名是 `A` 而不是 `"A"`。
+// 若这里不剥引号，组名会带着字面量引号进入产物：既与 `[]A` 这类组引用对不上
+// （引用了不存在的组，成员被剔除），又与 subconverter 的产物不一致。
+// 注意只剥首尾、不碰中间的引号，与 `trimQuote` 的行为保持一致。
+function trimQuote(value) {
+    const text = String(value);
+    const quote = '"';
+    if (text.length < 2 || !text.startsWith(quote) || !text.endsWith(quote)) return text;
+    return text.slice(1, -1);
+}
+
 export function parseExternalConfig(content) {
     const text = String(content || '').replace(/^\uFEFF/, '');
     if (!/^\s*\[custom\]/im.test(text)) {
@@ -442,8 +454,8 @@ export function parseExternalConfig(content) {
             const value = body;
             const separator = value.indexOf(',');
             if (separator < 0) continue;
-            const group = value.slice(0, separator).trim();
-            const source = value.slice(separator + 1).trim();
+            const group = trimQuote(value.slice(0, separator).trim());
+            const source = trimQuote(value.slice(separator + 1).trim());
             if (source.startsWith('[]')) {
                 const builtin = source.slice(2).split(',');
                 rules.push(`${builtin[0] === 'FINAL' ? 'MATCH' : builtin[0]},${builtin.slice(1).join(',')}${builtin.length > 1 ? ',' : ''}${group}`);
@@ -467,8 +479,8 @@ export function parseExternalConfig(content) {
             rules.push(`RULE-SET,${name},${group}`);
         } else if (key === 'custom_proxy_group') {
             const parts = body.split('`');
-            const name = parts.shift()?.trim();
-            const groupType = parts.shift()?.trim();
+            const name = trimQuote(parts.shift()?.trim());
+            const groupType = trimQuote(parts.shift()?.trim());
             if (!name || !groupType) continue;
             const group = { name, type: groupType === 'url-test' ? 'url-test' : groupType, proxies: [] };
             // 显式组引用（`[]X`）与“过滤条件求值出的节点名”必须分开记录：
@@ -480,7 +492,7 @@ export function parseExternalConfig(content) {
                 if (part === '.*') {
                     group.proxies.push('__ALL_PROXIES__');
                 } else if (part.startsWith('[]')) {
-                    const ref = part.slice(2);
+                    const ref = trimQuote(part.slice(2));
                     refs.add(ref);
                     // 用哨兵标记“这是组引用”。节点名可能和组名完全相同
                     // （订阅里就有叫 `🇯🇵 JP` 的节点，而同时存在 `🇯🇵 JP` 组），

@@ -116,6 +116,7 @@ https://example.workers.dev/129438/sub?target=mihomo&url=<URLS>&config=%5Bcustom
 - **等号两侧允许空白**：`custom_proxy_group =X`、`custom_proxy_group= X` 均可解析。
 - **注释**：`;` 与 `#` 开头的行都会被忽略。
 - **换行与 BOM**：兼容 CRLF 与 UTF-8 BOM 开头的文件。
+- **值首尾引号**：`custom_proxy_group="A"...` 的组名是 `A` 而非 `"A"`（对齐 subconverter 的 `trimQuote`，只剥首尾引号，保留中间引号）。
 
 支持的指令：
 
@@ -132,6 +133,8 @@ https://example.workers.dev/129438/sub?target=mihomo&url=<URLS>&config=%5Bcustom
 - `.*` 表示**包含全部节点**。
 - 其余片段视为**节点名过滤条件**：含 `()`、`|`、`^`、`$` 或内联标志 `(?i)` 时按正则匹配，否则按子串匹配。
 - `url-test` 组的测速地址为参数中第一个 `http(s)://` 值，测速参数形如 `间隔,超时,容差`，后两段可省略（`300`、`600,,50` 均合法）。
+
+组名与 `[]` 引用两侧的空白及**成对的首尾双引号**会被剥离，因此 `"A"` 与 `A` 是同一个组名。
 
 为保证产物能被 mihomo 正常加载，生成阶段还会做以下校正：
 
