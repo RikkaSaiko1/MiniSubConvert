@@ -241,9 +241,9 @@ let env;
 
         // 裸节点名 `SG` 必须被改名，否则会被 mihomo 当成对组 `🇸🇬 SG` 的引用
         const proxySection = body.slice(0, body.indexOf('proxy-groups:'));
-        // 改名标记必须放在名字的文本部分（`SG-tag`），不能是会被下游抹掉的
-        // 装饰性后缀（`SG ·node`），否则第二跳重新规范化后撞名会复活。
-        if (proxySection.includes('name: SG-tag')) {
+        // 改名标记必须放在名字的文本部分（`SG Node`），不能是会被下游抹掉的
+        // 装饰性后缀（`SG ·node`），也不能是不可见字符（下游清理后会复活）。
+        if (proxySection.includes('name: SG Node')) {
             pass('与组名撞车的裸节点 `SG` 已被改名');
         } else {
             fail('裸节点 `SG` 未被改名，mihomo 会误判成环');
@@ -291,7 +291,7 @@ let env;
             fail(`策略组内存在重复成员: ${dupMembers.join(' ; ')}`);
         }
 
-        if (proxy && proxy.proxies.includes('🇯🇵 JP-tag') && proxy.proxies.includes('🇯🇵 JP')) {
+        if (proxy && proxy.proxies.includes('🇯🇵 JP Node') && proxy.proxies.includes('🇯🇵 JP')) {
             pass('同名节点 `🇯🇵 JP` 与组引用 `🇯🇵 JP` 被正确区分');
         } else {
             fail(`同名节点/组引用未区分: ${proxy ? proxy.proxies.join(', ') : 'N/A'}`);
@@ -394,7 +394,8 @@ let env;
     // 改名必须能扛住下游规范化。misub 等第二跳会重新按地区正则匹配节点名，
     // 并给裸地区名补国旗：`SG ·node` 这类以分隔符结尾的装饰性后缀会被整段抹掉，
     // 名字还原成 `🇸🇬 SG`，与策略组名精确撞名 -> proxy group 🇸🇬 SG: the duplicate name。
-    // 因此标记必须落在名字的文本部分（`SG-tag`）。
+    // 因此标记必须落在名字的文本部分（`SG Node`），且必须是可见字母：
+    // 零宽字符之类的不可见标记会被下游的字符清理剥掉，撞名同样会复活。
     try {
         const restoreFetch = installWorkerdFetch();
         subBody = [
@@ -424,14 +425,73 @@ let env;
             const flags = { SG: '🇸🇬 ', JP: '🇯🇵 ', US: '🇺🇸 ', HK: '🇭🇰 ', TW: '🇹🇼 ', KR: '🇰🇷 ' };
             const normalize = (n) => {
                 let s = n.replace(/\s*[·‧・]\s*node\d*$/u, '');
+                // 下游常见的字符清理：剥掉零宽/控制字符与 BOM。
+                // 不可见标记会在这里被抹掉，导致撞名复活，因此必须失败。
+                s = s.replace(/[\u0000-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g, '');
                 s = s.replace(/^(SG|JP|US|HK|TW|KR)(\s+\d+)?$/, (m, rg, num) => flags[rg] + rg + (num || ''));
                 return s;
             };
             const revived = [...new Set(nodeNames.map(normalize))].filter((n) => gnames.has(n));
             if (nodeNames.length > 0 && revived.length === 0) {
-                pass('撞名节点的改名能扛住下游 emoji 规范化，不会复活撞名');
+                pass('撞名节点的改名能扛住下游 emoji 规范化与不可见字符清理，不会复活撞名');
             } else {
                 fail(`下游规范化后撞名复活: ${revived.join(', ')}`);
+            }
+
+            // 标记本身必须是可见字符：不可见标记会被下游清理抹掉。
+            const invisible = nodeNames.filter((n) =>
+                /[\u0000-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/.test(n),
+            );
+            if (invisible.length === 0) {
+                pass('改名标记全部由可见字符组成');
+            } else {
+                fail(`改名标记含不可见字符（下游清理后会复活撞名）: ${invisible.map((n) => JSON.stringify(n)).join(', ')}`);
+            }
+        }
+    } finally {
+        restoreFetch();
+    }
+
+    // 真实案例：配置里的策略组 `DNS 出口` 与订阅里的节点 `DNS 出口` 精确撞名。
+    // 撞名节点必须被改名，否则 mihomo 报 `proxy group DNS 出口: the duplicate name`；
+    // 而且改名后的名字要能用肉眼看出它是节点。
+    try {
+        const restoreFetch = installWorkerdFetch();
+        subBody = [
+            'vless://33333333-3333-3333-3333-333333333333@c.example.com:443?encryption=none&security=tls&type=ws&host=c.example.com&path=%2F#DNS%20%E5%87%BA%E5%8F%A3',
+            'vless://44444444-4444-4444-4444-444444444444@d.example.com:443?encryption=none&security=tls&type=ws&host=d.example.com&path=%2F#SG-01',
+        ].join('\n');
+        configBody = [
+            '[custom]',
+            'ruleset=🚀 PROXY,[]FINAL',
+            'custom_proxy_group=🚀 PROXY`select`.*`[]♻️ AUTO`[]DNS 出口',
+            'custom_proxy_group=♻️ AUTO`url-test`.*`https://www.apple.com/library/test/success.html`300,5,50',
+            'custom_proxy_group=DNS 出口`url-test`.*`https://www.apple.com/library/test/success.html`300,5,50',
+            'enable_rule_generator=true',
+            'overwrite_original_rules=true',
+        ].join('\n');
+
+        const res = await run();
+        if (res.status !== 200) {
+            fail(`\`DNS 出口\` 撞名场景期望 200，实际 ${res.status}`);
+        } else {
+            const groups = parseGroups(res.body);
+            const gnames = new Set(groups.map((g) => g.name));
+            const proxySection = res.body.slice(0, res.body.indexOf('proxy-groups:'));
+            const nodeNames = [...proxySection.matchAll(/name:\s*(.+?)\s*$/gm)].map((m) => m[1]);
+
+            if (gnames.has('DNS 出口')) {
+                pass('策略组 `DNS 出口` 仍然存在');
+            } else {
+                fail(`策略组 \`DNS 出口\` 丢失: ${[...gnames].join(', ')}`);
+            }
+
+            if (nodeNames.includes('DNS 出口')) {
+                fail(`节点名与组名 \`DNS 出口\` 精确相撞，mihomo 会报 the duplicate name`);
+            } else if (nodeNames.includes(`DNS 出口 Node`)) {
+                pass('撞名节点 `DNS 出口` 被改名成 `DNS 出口 Node`');
+            } else {
+                fail(`撞名节点未按预期改名: ${nodeNames.join(', ')}`);
             }
         }
     } finally {

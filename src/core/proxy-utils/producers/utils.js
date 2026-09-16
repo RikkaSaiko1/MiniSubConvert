@@ -549,6 +549,11 @@ export async function resolveExternalConfig(config) {
 // 就会被当成组引用。典型场景：节点名为 `🇯🇵 JP`，而同时存在 `🇯🇵 JP` 策略组，
 // 于是该节点在组里会被 mihomo 当成对组自身的引用 -> loop is detected。
 // 这里只改写“确实是节点”的名字，`[]X` 组引用一律保持原样。
+//
+// 撞名节点统一追加的可见英文标记。必须是可见字符：不可见标记（零宽字符等）
+// 会被下游的字符清理抹掉，导致撞名复活。
+export const COLLISION_MARKER = 'Node';
+
 function renameCollidingProxies(groups, list) {
     const groupNameSet = new Set(groups.map((group) => group.name));
     if (groupNameSet.size === 0) {
@@ -591,17 +596,21 @@ function renameCollidingProxies(groups, list) {
         const name = proxy.name;
         if (renames.has(name) || !collides(name)) continue;
 
-        // 这里不能用「后缀」规避撞名。下游（misub 等）会重新按地区正则匹配
-        // 节点名并做 emoji 规范化，`SG ·node` 这类以分隔符结尾的装饰性后缀
-        // 会被整段抹掉，名字又还原成 `🇸🇬 SG`，与策略组名精确撞名。
+        // 这里不能用「装饰性后缀」规避撞名。下游（misub 等）会重新按地区正则
+        // 匹配节点名并做 emoji 规范化，`SG ·node` 这类以分隔符结尾的后缀会被
+        // 整段抹掉，名字又还原成 `🇸🇬 SG`，与策略组名精确撞名。
         //
-        // 改为在名字「文本部分」里插入一个下游不会剥离、且不匹配任何地区
-        // 关键词的标记：`SG` -> `SG-tag`。国旗 emoji 加在最前面不影响该标记，
-        // 因此即使下游补上 `🇸🇬` 前缀，组名 `🇸🇬 SG` 仍与节点名 `🇸🇬 SG-tag`
+        // 也**不能**用零宽字符之类的不可见标记：下游若清理控制字符，标记会
+        // 被剥掉，撞名同样复活（实测此时 mihomo 会重新报 loop is detected）。
+        // 因此标记必须是可见、且不被任何常见规范化流程移除的字母。
+        //
+        // 用全局统一的英文标记 `Node`：`SG` -> `SG Node`。mihomo 按名字精确
+        // 比对，`SG Node` 不等于组名 `🇸🇬 SG`；即使下游补上 `🇸🇬` 前缀也一样
         // 不同，撞名不会复活。
-        let candidate = `${name}-tag`;
+        let candidate = `${name} ${COLLISION_MARKER}`;
         let suffix = 2;
-        while (used.has(candidate)) candidate = `${name}-tag${suffix++}`;
+        while (used.has(candidate))
+            candidate = `${name} ${COLLISION_MARKER} ${suffix++}`;
 
         used.add(candidate);
         renames.set(name, candidate);
