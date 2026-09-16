@@ -137,12 +137,16 @@ https://example.workers.dev/129438/sub?target=mihomo&url=<URLS>&config=%5Bcustom
 
 - 引用了不存在策略组的成员会被剔除。
 - 指向自身或形成环路的组成员会被剔除。
-- 节点名与策略组名冲突时自动重命名（避免 mihomo 把节点误判成组引用）。
+- 节点名与策略组名冲突时自动重命名（避免 mihomo 把节点误判成组引用）。重命名标记写在**名字的文本部分**（`SG` → `SG-tag`），而不是以分隔符结尾的后缀。
 - 组内重复成员会被去重（避免 `the duplicate name`）。
 
 ### 与 subconverter 串联使用
 
-本项目可作为 subconverter 的**上游**：先用远程 subconverter + INI 完成一次转换，再把产物导入 misub 做最终转换。由于上述校正只在生成阶段生效，两跳之间不会产生组引用冲突。
+本项目可作为 subconverter 的**上游**：先用远程 subconverter + INI 完成一次转换，再把产物导入 misub 做最终转换。
+
+多跳转换时，下游（misub、bettbox 等）会重新按地区正则匹配节点名并做 emoji 规范化。因此撞名规避**不能用装饰性后缀**——`SG ·node` 这类后缀会被下游整段抹掉，名字还原成 `🇸🇬 SG`，与同名策略组精确撞名，报 `proxy group 🇸🇬 SG: the duplicate name`。本项目改用文本标记 `SG-tag`：国旗 emoji 加在最前面不影响该标记，下游规范化后节点名仍不等于组名，撞名不会复活。
+
+由于上述校正只在生成阶段生效，两跳之间不会产生组引用冲突。
 
 ### Docker
 

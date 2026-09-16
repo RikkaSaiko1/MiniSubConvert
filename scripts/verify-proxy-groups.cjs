@@ -241,7 +241,9 @@ let env;
 
         // 裸节点名 `SG` 必须被改名，否则会被 mihomo 当成对组 `🇸🇬 SG` 的引用
         const proxySection = body.slice(0, body.indexOf('proxy-groups:'));
-        if (proxySection.includes('name: SG ·node') || proxySection.includes('SG ·node')) {
+        // 改名标记必须放在名字的文本部分（`SG-tag`），不能是会被下游抹掉的
+        // 装饰性后缀（`SG ·node`），否则第二跳重新规范化后撞名会复活。
+        if (proxySection.includes('name: SG-tag')) {
             pass('与组名撞车的裸节点 `SG` 已被改名');
         } else {
             fail('裸节点 `SG` 未被改名，mihomo 会误判成环');
@@ -289,7 +291,7 @@ let env;
             fail(`策略组内存在重复成员: ${dupMembers.join(' ; ')}`);
         }
 
-        if (proxy && proxy.proxies.includes('🇯🇵 JP ·node') && proxy.proxies.includes('🇯🇵 JP')) {
+        if (proxy && proxy.proxies.includes('🇯🇵 JP-tag') && proxy.proxies.includes('🇯🇵 JP')) {
             pass('同名节点 `🇯🇵 JP` 与组引用 `🇯🇵 JP` 被正确区分');
         } else {
             fail(`同名节点/组引用未区分: ${proxy ? proxy.proxies.join(', ') : 'N/A'}`);
@@ -383,6 +385,53 @@ let env;
                 pass('YAML 配置里的重复成员已被去重');
             } else {
                 fail(`\`🇸🇬 SG\` 仍含重复成员: ${sgMembers.join(', ')}`);
+            }
+        }
+    } finally {
+        restoreFetch();
+    }
+
+    // 改名必须能扛住下游规范化。misub 等第二跳会重新按地区正则匹配节点名，
+    // 并给裸地区名补国旗：`SG ·node` 这类以分隔符结尾的装饰性后缀会被整段抹掉，
+    // 名字还原成 `🇸🇬 SG`，与策略组名精确撞名 -> proxy group 🇸🇬 SG: the duplicate name。
+    // 因此标记必须落在名字的文本部分（`SG-tag`）。
+    try {
+        const restoreFetch = installWorkerdFetch();
+        subBody = [
+            'vless://11111111-1111-1111-1111-111111111111@a.example.com:443?encryption=none&security=tls&type=ws&host=a.example.com&path=%2F#SG',
+            'vless://22222222-2222-2222-2222-222222222222@b.example.com:443?encryption=none&security=tls&type=ws&host=b.example.com&path=%2F#JP',
+        ].join('\n');
+        configBody = [
+            '[custom]',
+            'ruleset=DIRECT,[]FINAL',
+            'custom_proxy_group=🚀 PROXY`select`.*`[]🇸🇬 SG`[]🇯🇵 JP',
+            'custom_proxy_group=🇸🇬 SG`url-test`(新加坡|坡|狮城|SG|Singapore)`https://www.apple.com/library/test/success.html`300,5,50',
+            'custom_proxy_group=🇯🇵 JP`url-test`(日本|JP|Japan)`https://www.apple.com/library/test/success.html`300,5,50',
+            'enable_rule_generator=true',
+            'overwrite_original_rules=true',
+        ].join('\n');
+
+        const res = await run();
+        if (res.status !== 200) {
+            fail(`下游抗性场景期望 200，实际 ${res.status}`);
+        } else {
+            const groups = parseGroups(res.body);
+            const gnames = new Set(groups.map((g) => g.name));
+            const proxySection = res.body.slice(0, res.body.indexOf('proxy-groups:'));
+            const nodeNames = [...proxySection.matchAll(/name:\s*(.+?)\s*$/gm)].map((m) => m[1]);
+
+            // 模拟下游：抹掉 ` ·node`/`‧node` 之类装饰性后缀，并给裸地区名补国旗
+            const flags = { SG: '🇸🇬 ', JP: '🇯🇵 ', US: '🇺🇸 ', HK: '🇭🇰 ', TW: '🇹🇼 ', KR: '🇰🇷 ' };
+            const normalize = (n) => {
+                let s = n.replace(/\s*[·‧・]\s*node\d*$/u, '');
+                s = s.replace(/^(SG|JP|US|HK|TW|KR)(\s+\d+)?$/, (m, rg, num) => flags[rg] + rg + (num || ''));
+                return s;
+            };
+            const revived = [...new Set(nodeNames.map(normalize))].filter((n) => gnames.has(n));
+            if (nodeNames.length > 0 && revived.length === 0) {
+                pass('撞名节点的改名能扛住下游 emoji 规范化，不会复活撞名');
+            } else {
+                fail(`下游规范化后撞名复活: ${revived.join(', ')}`);
             }
         }
     } finally {

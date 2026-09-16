@@ -579,9 +579,17 @@ function renameCollidingProxies(groups, list) {
         const name = proxy.name;
         if (renames.has(name) || !collides(name)) continue;
 
-        let candidate = `${name} ·node`;
+        // 这里不能用「后缀」规避撞名。下游（misub 等）会重新按地区正则匹配
+        // 节点名并做 emoji 规范化，`SG ·node` 这类以分隔符结尾的装饰性后缀
+        // 会被整段抹掉，名字又还原成 `🇸🇬 SG`，与策略组名精确撞名。
+        //
+        // 改为在名字「文本部分」里插入一个下游不会剥离、且不匹配任何地区
+        // 关键词的标记：`SG` -> `SG-tag`。国旗 emoji 加在最前面不影响该标记，
+        // 因此即使下游补上 `🇸🇬` 前缀，组名 `🇸🇬 SG` 仍与节点名 `🇸🇬 SG-tag`
+        // 不同，撞名不会复活。
+        let candidate = `${name}-tag`;
         let suffix = 2;
-        while (used.has(candidate)) candidate = `${name} ·node${suffix++}`;
+        while (used.has(candidate)) candidate = `${name}-tag${suffix++}`;
 
         used.add(candidate);
         renames.set(name, candidate);
