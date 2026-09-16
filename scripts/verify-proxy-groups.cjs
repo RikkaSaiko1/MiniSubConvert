@@ -274,6 +274,21 @@ let env;
             fail(`组员无法解析（会退化成组引用）: ${unresolved.join(' ; ')}`);
         }
 
+        // mihomo 对同一策略组内的重名成员直接报 `the duplicate name`。
+        const dupMembers = [];
+        for (const g of groups) {
+            const seen = new Set();
+            for (const m of g.proxies) {
+                if (seen.has(m)) dupMembers.push(`${g.name} -> ${m}`);
+                seen.add(m);
+            }
+        }
+        if (dupMembers.length === 0) {
+            pass('没有任何策略组含重复成员');
+        } else {
+            fail(`策略组内存在重复成员: ${dupMembers.join(' ; ')}`);
+        }
+
         if (proxy && proxy.proxies.includes('🇯🇵 JP ·node') && proxy.proxies.includes('🇯🇵 JP')) {
             pass('同名节点 `🇯🇵 JP` 与组引用 `🇯🇵 JP` 被正确区分');
         } else {
@@ -336,6 +351,39 @@ let env;
             }
         } else {
             fail(`空地区组场景期望 200，实际 ${second.status}`);
+        }
+
+        // YAML 形式的配置没有 `[]X` 语法，成员是裸字符串。若配置里本就写了
+        // 重复成员（`proxies: [SG, SG]`），改名后二者会得到同一个新名，mihomo
+        // 会直接报 `proxy group <name>: the duplicate name`。
+        console.log('\n=== YAML 配置里的重复成员必须被去重 ===');
+        subBody = [
+            `ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@10.0.2.1:8388#${enc('SG')}`,
+            `ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@10.0.2.2:8388#${enc('SG')}`,
+        ].join('\n');
+        configBody = [
+            'proxy-groups:',
+            '  - name: 🇸🇬 SG',
+            '    type: url-test',
+            '    url: https://www.apple.com/library/test/success.html',
+            '    proxies:',
+            '      - SG',
+            '      - SG',
+        ].join('\n');
+
+        const dup = await run();
+        if (dup.status !== 200) {
+            fail(`YAML 重复成员场景期望 200，实际 ${dup.status}`);
+        } else {
+            const dupGroups = parseGroups(dup.body);
+            const dupSg = groupOf(dupGroups, '🇸🇬 SG');
+            const sgMembers = dupSg ? dupSg.proxies : [];
+            const sgDups = sgMembers.filter((m, i) => sgMembers.indexOf(m) !== i);
+            if (sgMembers.length > 0 && sgDups.length === 0) {
+                pass('YAML 配置里的重复成员已被去重');
+            } else {
+                fail(`\`🇸🇬 SG\` 仍含重复成员: ${sgMembers.join(', ')}`);
+            }
         }
     } finally {
         restoreFetch();

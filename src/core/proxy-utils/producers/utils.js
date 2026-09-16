@@ -525,9 +525,17 @@ export async function resolveExternalConfig(config) {
 function renameCollidingProxies(groups, list) {
     const groupNameSet = new Set(groups.map((group) => group.name));
     if (groupNameSet.size === 0) {
-        // 即便没有组名可比对，也必须解包组引用哨兵，避免对象泄漏进 YAML。
+        // 即便没有组名可比对，也必须解包组引用哨兵，避免对象泄漏进 YAML；
+        // 同时按名字去重，防止 YAML 配置里重复成员导致 the duplicate name。
         for (const group of groups) {
-            group.proxies = group.proxies.map((item) => refName(item));
+            const seen = new Set();
+            group.proxies = group.proxies
+                .map((item) => refName(item))
+                .filter((name) => {
+                    if (seen.has(name)) return false;
+                    seen.add(name);
+                    return true;
+                });
         }
         return list;
     }
@@ -579,39 +587,46 @@ function renameCollidingProxies(groups, list) {
     // 里不存在，mihomo 只能把它解析成对同名策略组的引用，从而产生
     // loop is detected。
     //
-    // YAML 形式的配置走不到这里（没有 `[]X` 语法，`groupRefs` 为空），
-    // 因此哨兵是唯一的判据。
+    // YAML 形式的配置没有 `[]X` 语法，成员是裸字符串。这类配置里若本就写了
+    // 重复成员（`proxies: [SG, SG]`），改名后两者会得到同一个新名，mihomo
+    // 会直接报 `the duplicate name`；因此改名后必须按最终名字去重。
     for (const group of groups) {
-        group.proxies = group.proxies.map((item) => {
-            const name = refName(item);
-            const isRef = item !== null && typeof item === 'object';
-            return isRef ? name : (renames.get(name) || name);
-        });
+        const seen = new Set();
+        group.proxies = group.proxies
+            .map((item) => {
+                const name = refName(item);
+                const isRef = item !== null && typeof item === 'object';
+                return isRef ? name : (renames.get(name) || name);
+            })
+            .filter((name) => {
+                if (seen.has(name)) return false;
+                seen.add(name);
+                return true;
+            });
     }
 
     return list;
 }
 
+// 重名节点按 `<name> <n>` 追加序号去重。注意不能用“该名字第几次出现”当序号：
+// 若原始名单里已存在 `SG 2`，把第二个 `SG` 命名为 `SG 2` 会撞上它，进而递增成
+// `SG 2 2` 这种被污染的名字。这里始终在 `<name> n` 上找到第一个未被占用的名字。
 export function ensureUniqueProxyNames(list) {
-    const nameCounts = new Map();
     const usedNames = new Set();
 
     return list.map((proxy) => {
         const name = proxy.name;
-        let count = nameCounts.get(name) || 0;
-        let uniqueName;
-
-        do {
-            count += 1;
-            uniqueName = count === 1 ? name : `${name} ${count}`;
-        } while (usedNames.has(uniqueName));
-
-        nameCounts.set(name, count);
-        usedNames.add(uniqueName);
-
-        if (uniqueName !== name) {
-            proxy.name = uniqueName;
+        if (!usedNames.has(name)) {
+            usedNames.add(name);
+            return proxy;
         }
+
+        let suffix = 2;
+        while (usedNames.has(`${name} ${suffix}`)) suffix += 1;
+        const uniqueName = `${name} ${suffix}`;
+
+        usedNames.add(uniqueName);
+        proxy.name = uniqueName;
 
         return proxy;
     });
