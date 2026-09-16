@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { ProxyUtils } from "./core/proxy-utils";
-import { parseExternalConfig } from "./core/proxy-utils/producers/utils";
+import { resolveExternalConfig } from "./core/proxy-utils/producers/utils";
 import { collectForwardedHeaders, rewriteSourceForProfileHeaders } from "./core/subscription-headers";
 
 const corsHeaders = {
@@ -107,7 +107,7 @@ createServer(async (req, res) => {
 
         const target = url.searchParams.get("target");
         const rawUrls = url.searchParams.get("url");
-        const configUrl = url.searchParams.get("config");
+        const config = url.searchParams.get("config");
 
         if (!target || !rawUrls) {
             writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
@@ -117,15 +117,16 @@ createServer(async (req, res) => {
         }
 
         let externalConfig = {};
-        if (configUrl) {
-            const configResponse = await fetch(configUrl);
-            if (!configResponse.ok) {
+        if (config) {
+            try {
+                externalConfig = await resolveExternalConfig(config);
+            } catch (error) {
+                const message = (error && error.message) || String(error);
                 writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
-                res.end("failed to fetch external config");
+                res.end(`failed to fetch external config: ${message}`);
                 log("502");
                 return;
             }
-            externalConfig = parseExternalConfig(await configResponse.text());
         }
 
         const sources = await Promise.all(

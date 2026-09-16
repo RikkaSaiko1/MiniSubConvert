@@ -220,6 +220,8 @@ function resolveGroupProxies(groups, groupFilters, list) {
         'GLOBAL',
     ]);
 
+    const groupNames = new Set(groups.map((group) => group.name));
+
     const resolved = groups.map((group) => {
         const filters = groupFilters?.[group.name] || [];
         const proxies = group.proxies.flatMap((item) => {
@@ -228,9 +230,17 @@ function resolveGroupProxies(groups, groupFilters, list) {
         });
 
         for (const filter of filters) {
-            const regex = toFilterRegex(filter);
-            const matched = nodeNames.filter((name) => regex.test(name));
-            for (const name of matched) {
+            // 裸片段优先按“引用已有策略组”解释（ACL4SSR 里 `🌍 国外` 的
+            // `🇸🇬 SG`、`🇯🇵 JP` 就是组引用）；不指向任何组时才退化成
+            // 节点名过滤条件。
+            if (groupNames.has(filter)) {
+                if (filter !== group.name && !proxies.includes(filter)) {
+                    proxies.push(filter);
+                }
+                continue;
+            }
+
+            for (const name of matchFilter(filter, nodeNames)) {
                 if (!proxies.includes(name)) proxies.push(name);
             }
         }
@@ -267,11 +277,52 @@ function resolveGroupProxies(groups, groupFilters, list) {
         kept = next;
     }
 
+    // 上面剔除了悬空引用，这里剔除成环引用（A -> B -> A）。mihomo 检测到
+    // ProxyGroup 成环时会直接拒绝加载（loop is detected），因此从组里去掉
+    // 引用自身、或引用后能绕回自己的那个成员；组本身仍保留。
+    const groupByName = new Map(kept.map((group) => [group.name, group]));
+    const breaksLoop = new WeakSet();
+    const visited = new WeakSet();
+
+    const reaches = (from, target) => {
+        if (from === target) return true;
+        if (breaksLoop.has(from) || visited.has(from)) return false;
+        visited.add(from);
+        for (const member of from.proxies) {
+            const nested = groupByName.get(member);
+            if (nested && reaches(nested, target)) return true;
+        }
+        return false;
+    };
+
+    for (const group of kept) {
+        const next = group.proxies.filter((member) => {
+            if (member === group.name) return false;
+            const nested = groupByName.get(member);
+            if (!nested) return true;
+            breaksLoop.add(group);
+            const loops = reaches(nested, group);
+            breaksLoop.delete(group);
+            return !loops;
+        });
+
+        if (next.length === group.proxies.length) continue;
+        $.error(
+            `proxy group ${group.name} contains loop references, they will be ignored`,
+        );
+        group.proxies = next;
+    }
+
     return kept;
 }
 
-// custom_proxy_group 里的过滤条件可能是 PCRE 风格的内联标志 (如 `(?i)香港|HK`)，
-// 而 JS 的 RegExp 不支持 `(?i)`，这里转换后再构造。
+// custom_proxy_group 里的过滤条件可能是 PCRE 风格的内联标志 (如 `(?i)香港|HK`)、
+// 显式分组 (如 `(香港|HK)`)，或普通子串 (如 `香港`)。只有前两类才按正则处理，
+// 否则 `🇸🇬 SG` 这类国家名会被当成正则，把 `🇸🇬 SG 🇯🇵 JP` 也一并匹配进组里。
+function isRegexFilter(filter) {
+    return /\(\?[a-z]+\)/i.test(filter) || /[()|^$]/.test(filter);
+}
+
 function toFilterRegex(filter) {
     const flags = new Set();
     const pattern = filter.replace(/\(\?([a-z]+)\)/gi, (matched, inlineFlags) => {
@@ -287,6 +338,18 @@ function toFilterRegex(filter) {
         // 仍不是合法正则时退化为子串匹配
         return new RegExp(escapeRegExp(pattern), [...flags].join(''));
     }
+}
+
+function matchFilter(filter, nodeNames) {
+    if (!isRegexFilter(filter)) {
+        return nodeNames.filter((name) => name.includes(filter));
+    }
+
+    const regex = toFilterRegex(filter);
+    return nodeNames.filter((name) => {
+        regex.lastIndex = 0;
+        return regex.test(name);
+    });
 }
 
 function escapeRegExp(text) {
@@ -310,7 +373,7 @@ export function produceClashConfigOutput(list, type, opts = {}) {
         : [];
 
     if (externalGroups.length > 0) {
-        renameCollidingProxies(externalGroups, list);
+        renameCollidingProxies(externalGroups, list, externalConfig.groupRefs);
     }
 
     if (
@@ -348,6 +411,7 @@ export function parseExternalConfig(content) {
     const rules = [];
     const groups = [];
     const groupFilters = {};
+    const groupRefs = {};
     const providerNames = new Set();
 
     for (const rawLine of text.split(/\r?\n/)) {
@@ -387,17 +451,24 @@ export function parseExternalConfig(content) {
             const groupType = parts.shift()?.trim();
             if (!name || !groupType) continue;
             const group = { name, type: groupType === 'url-test' ? 'url-test' : groupType, proxies: [] };
+            // 显式组引用（`[]X`）与“过滤条件求值出的节点名”必须分开记录：
+            // 二者最终都会进 `proxies`，但组引用不能被改名逻辑当成节点处理，
+            // 否则 `[]🇯🇵 JP` 这类引用会被替换成同名节点 `🇯🇵 JP ·node`。
+            const refs = new Set();
             for (const part of parts) {
                 if (!part || /^https?:\/\//.test(part) || /^\d/.test(part)) continue;
                 if (part === '.*') {
                     group.proxies.push('__ALL_PROXIES__');
                 } else if (part.startsWith('[]')) {
-                    group.proxies.push(part.slice(2));
+                    const ref = part.slice(2);
+                    refs.add(ref);
+                    group.proxies.push(ref);
                 } else {
                     // 其余片段是节点名匹配条件（子串或正则），需在拿到节点列表后求值
                     groupFilters[name] = [...(groupFilters[name] || []), part];
                 }
             }
+            if (refs.size > 0) groupRefs[name] = refs;
             if (groupType === 'url-test') {
                 const url = parts.find((part) => /^https?:\/\//.test(part));
                 if (url) group.url = url;
@@ -413,17 +484,39 @@ export function parseExternalConfig(content) {
         }
     }
 
-    return { 'rule-providers': ruleProviders, rules, 'proxy-groups': groups, groupFilters };
+    return { 'rule-providers': ruleProviders, rules, 'proxy-groups': groups, groupFilters, groupRefs };
 }
 
-// mihomo 判断策略组是否成环时按名字解析引用，成员名只要“看起来指向组自身”
-// 就会误判。典型场景：节点名为 `SG`，而存在名为 `🇸🇬 SG` 的策略组。
-// 这里把这类会撞车的节点名改写掉，避免 mihomo 报 loop is detected。
-function renameCollidingProxies(groups, list) {
-    const groupNames = groups.map((group) => group.name);
-    if (groupNames.length === 0) return list;
+// mihomo / Sub-Store 的 `config` 参数可以同时接受「配置地址」和「配置正文」：
+// - http(s):// 是配置地址，需要先请求再解析；
+// - 其余情况（直接粘贴的 [custom] INI 或 YAML 正文）必须直接解析，
+//   否则 fetch() 会因不支持的协议抛错（正文首行的 `[custom]` 会被当成 scheme），
+//   导致整个请求 500。
+export async function resolveExternalConfig(config) {
+    if (!config) return {};
 
-    const used = new Set(list.map((proxy) => proxy.name));
+    const isUrl = /^https?:\/\//i.test(config);
+    if (!isUrl) return parseExternalConfig(config);
+
+    const response = await fetch(config);
+    if (!response.ok) {
+        throw new Error(
+            `failed to fetch external config: ${config} -> HTTP ${response.status}`,
+        );
+    }
+    return parseExternalConfig(await response.text());
+}
+
+// mihomo 判断策略组是否成环时按名字解析引用：成员名只要“看起来指向某个组”
+// 就会被当成组引用。典型场景：节点名为 `SG`，而存在名为 `🇸🇬 SG` 的策略组，
+// 于是组里那个 `SG` 成员被 mihomo 解析成对组自身的引用 -> loop is detected。
+// 这里只改写“确实是节点”的名字，组引用一律保持原样。
+function renameCollidingProxies(groups, list, groupRefs = {}) {
+    const groupNameSet = new Set(groups.map((group) => group.name));
+    if (groupNameSet.size === 0) return list;
+
+    const nodeNames = new Set(list.map((proxy) => proxy.name));
+    const used = new Set([...nodeNames, ...groupNameSet]);
     const renames = new Map();
 
     // `SG 2` 这类名字来自重名去重。mihomo 按名字解析引用，只要成员名本身
@@ -431,14 +524,15 @@ function renameCollidingProxies(groups, list) {
     const collides = (nodeName) => {
         // 去掉重名去重追加的 ` N` 序号后再比较
         const base = nodeName.replace(/\s+\d+$/, '');
-        return groupNames.some((groupName) => {
+        for (const groupName of groupNameSet) {
             const trimmed = groupName.trim();
             if (trimmed === nodeName || trimmed === base) return true;
             // 组名形如 `🇸🇬 SG`、节点名形如 `SG`：去掉国旗/emoji 等前缀字符后
             // 与节点名完全一致，mihomo 会把它当成对组自身的引用
             const stripped = trimmed.replace(/^[^\p{L}\p{N}]+/u, '');
-            return stripped === base;
-        });
+            if (stripped === base) return true;
+        }
+        return false;
     };
 
     for (const proxy of list) {
@@ -455,13 +549,18 @@ function renameCollidingProxies(groups, list) {
 
     if (renames.size === 0) return list;
 
-    const mapName = (name) => renames.get(name) || name;
-
     for (const proxy of list) {
-        proxy.name = mapName(proxy.name);
+        proxy.name = renames.get(proxy.name) || proxy.name;
     }
+
+    // 组引用必须原样保留：`[]🇯🇵 JP` 是引用组 `🇯🇵 JP`，即便存在同名节点
+    // 也不能被改名，否则组之间的引用会丢失。
     for (const group of groups) {
-        group.proxies = group.proxies.map(mapName);
+        const refs = groupRefs[group.name];
+        group.proxies = group.proxies.map((name) => {
+            if (refs?.has(name) || groupNameSet.has(name)) return name;
+            return renames.get(name) || name;
+        });
     }
 
     return list;

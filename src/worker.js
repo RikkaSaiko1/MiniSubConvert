@@ -1,5 +1,5 @@
 import { ProxyUtils } from "./core/proxy-utils";
-import { parseExternalConfig } from "./core/proxy-utils/producers/utils";
+import { resolveExternalConfig } from "./core/proxy-utils/producers/utils";
 import { collectForwardedHeaders, rewriteSourceForProfileHeaders } from "./core/subscription-headers";
 
 const corsHeaders = {
@@ -129,7 +129,7 @@ export class MiniSubConvert {
                 const searchParams = new URL(request.url).searchParams;
                 const target = searchParams.get("target");
                 const rawUrls = searchParams.get("url");
-                const configUrl = searchParams.get("config");
+                const config = searchParams.get("config");
 
                 if (!target || !rawUrls) {
                     return new Response("missing target or url", { status: 400 });
@@ -137,12 +137,15 @@ export class MiniSubConvert {
 
                 const client = target;
                 let externalConfig = {};
-                if (configUrl) {
-                    const configResponse = await fetch(configUrl);
-                    if (!configResponse.ok) {
-                        return new Response("failed to fetch external config", { status: 502 });
+                if (config) {
+                    try {
+                        externalConfig = await resolveExternalConfig(config);
+                    } catch (error) {
+                        return new Response(
+                            `failed to fetch external config: ${(error && error.message) || error}`,
+                            { status: 502 },
+                        );
                     }
-                    externalConfig = parseExternalConfig(await configResponse.text());
                 }
                 const sources = await Promise.all(
                     rawUrls

@@ -57,6 +57,9 @@ GET <WORKER_DOMAIN>/<SECRET>/version
 - **url**: 原始订阅链接。
     - **多订阅合并**：如果需要合并多个订阅，请使用竖线 `|` 分隔链接。
     - **URL 编码**：最终拼接后的字符串必须进行 **URL Encode** 编码。
+- **config**: 可选。外部完整配置。
+    - **URL 形式**：以 `http://` 或 `https://` 开头时按链接抓取。
+    - **内联文本**：其他情况一律当作配置正文解析，即可以把 `.ini` / `.yaml` 配置内容直接塞进 `config` 参数，无需先上传到某个可访问的地址。正文同样需要 **URL Encode**。
 
 请求示例 
 
@@ -77,6 +80,31 @@ GET <WORKER_DOMAIN>/<SECRET>/version
 ```
 https://example.workers.dev/129438/sub?target=mihomo&url=https%3A%2F%2Fexample.com%2Fsub1%7Chttps%3A%2F%2Fexample.com%2Fsub2
 ```
+
+### 使用内联文本配置
+
+`config` 也可以直接传配置正文。例如本地存在 `SubConverter_config_lite.ini`：
+
+```ini
+[custom]
+
+ruleset=DIRECT,[]GEOIP,CN
+ruleset=🚀 PROXY,[]FINAL
+
+custom_proxy_group=🚀 PROXY`select`.*`[]♻️ AUTO
+custom_proxy_group=♻️ AUTO`url-test`.*`https://www.apple.com/library/test/success.html`600,,50
+
+enable_rule_generator=true
+overwrite_original_rules=true
+```
+
+把它 URL Encode 后拼到 `config=`：
+
+```
+https://example.workers.dev/129438/sub?target=mihomo&url=<URLS>&config=%5Bcustom%5D%0A%0Aruleset%3DDIRECT...
+```
+
+这样就不用为了改一条规则去单独托管一个配置文件。需要注意内联文本会占用 URL 长度，配置较大时仍建议使用 URL 形式。
 
 ### Docker
 
