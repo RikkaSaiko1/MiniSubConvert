@@ -408,8 +408,16 @@ export function produceClashConfigOutput(list, type, opts = {}) {
     );
 }
 
+// subconverter 用 iniparser 读配置，其语义与本解析器必须一致：
+// - `iniparser.c` 对键名做 `tolower()`，因此键名大小写不敏感；
+// - 解析时先跳过行首空白（`isspace`），因此 `key = value` 里的空格合法。
+// 之前这里用 `line.startsWith('ruleset=')` 精确匹配，遇到 `Ruleset=` 或
+// `custom_proxy_group =...` 会整行静默丢弃 —— 策略组凭空消失，而 subconverter
+// 认为是合法的，两边产物不一致就会在后续导入时产生引用了不存在组的成员。
+const INI_DIRECTIVE_RE = /^([A-Za-z_][\w]*)\s*=\s*(.*)$/;
+
 export function parseExternalConfig(content) {
-    const text = String(content || '');
+    const text = String(content || '').replace(/^\uFEFF/, '');
     if (!/^\s*\[custom\]/im.test(text)) {
         return YAML.safeLoad(text) || {};
     }
@@ -423,10 +431,15 @@ export function parseExternalConfig(content) {
 
     for (const rawLine of text.split(/\r?\n/)) {
         const line = rawLine.trim();
-        if (!line || line.startsWith(';')) continue;
+        if (!line || line.startsWith(';') || line.startsWith('#')) continue;
 
-        if (line.startsWith('ruleset=')) {
-            const value = line.slice('ruleset='.length);
+        const directive = INI_DIRECTIVE_RE.exec(line);
+        // 键名归一化到小写，与 iniparser 行为对齐
+        const key = directive ? directive[1].toLowerCase() : '';
+        const body = directive ? directive[2] : '';
+
+        if (key === 'ruleset') {
+            const value = body;
             const separator = value.indexOf(',');
             if (separator < 0) continue;
             const group = value.slice(0, separator).trim();
@@ -452,8 +465,8 @@ export function parseExternalConfig(content) {
                 interval: 86400,
             };
             rules.push(`RULE-SET,${name},${group}`);
-        } else if (line.startsWith('custom_proxy_group=')) {
-            const parts = line.slice('custom_proxy_group='.length).split('`');
+        } else if (key === 'custom_proxy_group') {
+            const parts = body.split('`');
             const name = parts.shift()?.trim();
             const groupType = parts.shift()?.trim();
             if (!name || !groupType) continue;
@@ -483,8 +496,10 @@ export function parseExternalConfig(content) {
             if (groupType === 'url-test') {
                 const url = parts.find((part) => /^https?:\/\//.test(part));
                 if (url) group.url = url;
-                // 该字段形如 `interval,timeout,tolerance`，三段落均可留空（如 `600,,50`）
-                const times = parts.find((part) => /^\d*\s*,\s*\d*\s*(,\s*\d*)?$/.test(part));
+                // 该字段形如 `interval,timeout,tolerance`，三段落均可留空：
+                // `600`（仅 interval）、`600,,50`（省略 timeout）都要能识别。
+                // 因此逗号是可选的，不能强制要求出现逗号，否则 `300` 会被丢弃。
+                const times = parts.find((part) => /^\d+\s*(,\s*\d*\s*(,\s*\d*)?)?$/.test(part));
                 if (times) {
                     const [interval, , tolerance] = times.split(',').map((value) => Number(value.trim()) || 0);
                     if (interval > 0) group.interval = interval;

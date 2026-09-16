@@ -108,6 +108,42 @@ https://example.workers.dev/129438/sub?target=mihomo&url=<URLS>&config=%5Bcustom
 
 这样就不用为了改一条规则去单独托管一个配置文件。需要注意内联文本会占用 URL 长度，配置较大时仍建议使用 URL 形式。
 
+### INI 配置解析
+
+`config` 指向的 `[custom]` 配置由内置解析器处理，其语义与 subconverter 保持一致（subconverter 用 iniparser 读取），因此从 subconverter 迁移过来的配置无需改写即可使用：
+
+- **键名大小写不敏感**：`ruleset=`、`Ruleset=`、`RULESET=` 等价。
+- **等号两侧允许空白**：`custom_proxy_group =X`、`custom_proxy_group= X` 均可解析。
+- **注释**：`;` 与 `#` 开头的行都会被忽略。
+- **换行与 BOM**：兼容 CRLF 与 UTF-8 BOM 开头的文件。
+
+支持的指令：
+
+| 指令 | 说明 |
+| --- | --- |
+| `ruleset=<组>,<URL>` | 生成 `rule-providers` 条目与对应的 `RULE-SET` 规则 |
+| `ruleset=<组>,[]<类型>,<值>` | 内建规则，如 `[]DOMAIN,example.com`、`[]GEOIP,CN`、`[]FINAL` |
+| `custom_proxy_group=<名>`<code>`</code>`<类型>`<code>`</code><code>`</code>`<参数>`<code>`</code><code>`</code>...` | 定义策略组，类型支持 `select`、`url-test`、`fallback`、`load-balance` |
+| `enable_rule_generator` / `overwrite_original_rules` | 接受但忽略（本转换器不做规则生成器行为） |
+
+`custom_proxy_group` 的参数按位置识别：
+
+- `[]<名称>` 表示**显式引用另一个策略组**。引用会保留原名，不会被当成同名节点。
+- `.*` 表示**包含全部节点**。
+- 其余片段视为**节点名过滤条件**：含 `()`、`|`、`^`、`$` 或内联标志 `(?i)` 时按正则匹配，否则按子串匹配。
+- `url-test` 组的测速地址为参数中第一个 `http(s)://` 值，测速参数形如 `间隔,超时,容差`，后两段可省略（`300`、`600,,50` 均合法）。
+
+为保证产物能被 mihomo 正常加载，生成阶段还会做以下校正：
+
+- 引用了不存在策略组的成员会被剔除。
+- 指向自身或形成环路的组成员会被剔除。
+- 节点名与策略组名冲突时自动重命名（避免 mihomo 把节点误判成组引用）。
+- 组内重复成员会被去重（避免 `the duplicate name`）。
+
+### 与 subconverter 串联使用
+
+本项目可作为 subconverter 的**上游**：先用远程 subconverter + INI 完成一次转换，再把产物导入 misub 做最终转换。由于上述校正只在生成阶段生效，两跳之间不会产生组引用冲突。
+
 ### Docker
 
 ```bash
