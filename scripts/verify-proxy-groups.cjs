@@ -452,44 +452,44 @@ let env;
         restoreFetch();
     }
 
-    // 真实案例：配置里的策略组 `DNS 出口` 与订阅里的节点 `DNS 出口` 精确撞名。
-    // 撞名节点必须被改名，否则 mihomo 报 `proxy group DNS 出口: the duplicate name`；
+    // 组名与节点名精确撞名：配置里的策略组 `🇸🇬 SG Group` 与订阅里的同名节点。
+    // 撞名节点必须被改名，否则 mihomo 报 `proxy group 🇸🇬 SG Group: the duplicate name`；
     // 而且改名后的名字要能用肉眼看出它是节点。
     try {
         const restoreFetch = installWorkerdFetch();
         subBody = [
-            'vless://33333333-3333-3333-3333-333333333333@c.example.com:443?encryption=none&security=tls&type=ws&host=c.example.com&path=%2F#DNS%20%E5%87%BA%E5%8F%A3',
+            'vless://33333333-3333-3333-3333-333333333333@c.example.com:443?encryption=none&security=tls&type=ws&host=c.example.com&path=%2F#%F0%9F%87%B8%F0%9F%87%AC%20SG%20Group',
             'vless://44444444-4444-4444-4444-444444444444@d.example.com:443?encryption=none&security=tls&type=ws&host=d.example.com&path=%2F#SG-01',
         ].join('\n');
         configBody = [
             '[custom]',
             'ruleset=🚀 PROXY,[]FINAL',
-            'custom_proxy_group=🚀 PROXY`select`.*`[]♻️ AUTO`[]DNS 出口',
+            'custom_proxy_group=🚀 PROXY`select`.*`[]♻️ AUTO`[]🇸🇬 SG Group',
             'custom_proxy_group=♻️ AUTO`url-test`.*`https://www.apple.com/library/test/success.html`300,5,50',
-            'custom_proxy_group=DNS 出口`url-test`.*`https://www.apple.com/library/test/success.html`300,5,50',
+            'custom_proxy_group=🇸🇬 SG Group`url-test`.*`https://www.apple.com/library/test/success.html`300,5,50',
             'enable_rule_generator=true',
             'overwrite_original_rules=true',
         ].join('\n');
 
         const res = await run();
         if (res.status !== 200) {
-            fail(`\`DNS 出口\` 撞名场景期望 200，实际 ${res.status}`);
+            fail(`\`🇸🇬 SG Group\` 撞名场景期望 200，实际 ${res.status}`);
         } else {
             const groups = parseGroups(res.body);
             const gnames = new Set(groups.map((g) => g.name));
             const proxySection = res.body.slice(0, res.body.indexOf('proxy-groups:'));
             const nodeNames = [...proxySection.matchAll(/name:\s*(.+?)\s*$/gm)].map((m) => m[1]);
 
-            if (gnames.has('DNS 出口')) {
-                pass('策略组 `DNS 出口` 仍然存在');
+            if (gnames.has('🇸🇬 SG Group')) {
+                pass('策略组 `🇸🇬 SG Group` 仍然存在');
             } else {
-                fail(`策略组 \`DNS 出口\` 丢失: ${[...gnames].join(', ')}`);
+                fail(`策略组 \`🇸🇬 SG Group\` 丢失: ${[...gnames].join(', ')}`);
             }
 
-            if (nodeNames.includes('DNS 出口')) {
-                fail(`节点名与组名 \`DNS 出口\` 精确相撞，mihomo 会报 the duplicate name`);
-            } else if (nodeNames.includes(`DNS 出口 Node`)) {
-                pass('撞名节点 `DNS 出口` 被改名成 `DNS 出口 Node`');
+            if (nodeNames.includes('🇸🇬 SG Group')) {
+                fail(`节点名与组名 \`🇸🇬 SG Group\` 精确相撞，mihomo 会报 the duplicate name`);
+            } else if (nodeNames.includes(`🇸🇬 SG Group Node`)) {
+                pass('撞名节点 `🇸🇬 SG Group` 被改名成 `🇸🇬 SG Group Node`');
             } else {
                 fail(`撞名节点未按预期改名: ${nodeNames.join(', ')}`);
             }
